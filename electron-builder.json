@@ -1,0 +1,43 @@
+{
+  "appId": "com.krypts.desktop",
+  "productName": "Krypts DRM",
+  "copyright": "Copyright © 2025 Krypts",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "main.js",
+    "electron-preload.js",
+    "public/**/*",
+    "node_modules/**/*",
+    "!node_modules/.bin",
+    "!node_modules/electron-builder/**/*",
+    "!**/*.map"
+  ],
+  "extraResources": [
+    {
+      "from": ".next",
+      "to": ".next",
+      "filter": ["**/*"]
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "public/favicon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowDirChange": true,
+    "installerIcon": "public/favicon.ico",
+    "uninstallerIcon": "public/favicon.ico",
+    "installerHeaderIcon": "public/favicon.ico",
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Krypts DRM"
+  }
+}
