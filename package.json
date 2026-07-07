@@ -1,6 +1,8 @@
 {
   "name": "krypts-desktop",
   "version": "0.1.0",
+  "description": "Secure DRM desktop application — encrypted content viewer with screenshot protection",
+  "author": "Krypts",
   "private": true,
   "main": "main.js",
   "scripts": {

@@ -27,15 +27,11 @@
         "target": "nsis",
         "arch": ["x64"]
       }
-    ],
-    "icon": "public/favicon.ico"
+    ]
   },
   "nsis": {
     "oneClick": false,
-    "allowDirChange": true,
-    "installerIcon": "public/favicon.ico",
-    "uninstallerIcon": "public/favicon.ico",
-    "installerHeaderIcon": "public/favicon.ico",
+    "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "Krypts DRM"
