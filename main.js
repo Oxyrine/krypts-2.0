@@ -83,24 +83,53 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// Prevent opening new windows — but intercept Krypts viewer URLs and load
-// them inside the current Electron window, rewritten to localhost:3000.
+// Handle new window requests — open Krypts viewer URLs in a new protected window.
 app.on("web-contents-created", (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
-    // Rewrite Vercel viewer links → localhost so they open inside the app
-    if (url.includes("krypts.vercel.app")) {
-      const localUrl = url.replace("https://krypts.vercel.app", "http://localhost:3000");
-      // Load in the main window after a short tick
+    const isLocalhost = url.startsWith("http://localhost:3000");
+    const isVercel   = url.includes("krypts.vercel.app");
+
+    if (isLocalhost || isVercel) {
+      // Rewrite Vercel → localhost if needed
+      const localUrl = isVercel
+        ? url.replace("https://krypts.vercel.app", "http://localhost:3000")
+        : url;
+
       setImmediate(() => {
-        if (mainWindow) mainWindow.loadURL(localUrl);
+        // Create a new Electron window for the viewer with full protection
+        const viewerWin = new BrowserWindow({
+          width: 1280,
+          height: 800,
+          minWidth: 800,
+          minHeight: 600,
+          title: "Krypts Secure Viewer",
+          webPreferences: {
+            preload: path.join(__dirname, "electron-preload.js"),
+            contextIsolation: true,
+            nodeIntegration: false,
+            devTools: false,
+          },
+        });
+
+        // CRITICAL: block screenshots / screen recording on the viewer window too
+        viewerWin.setContentProtection(true);
+        viewerWin.setMenuBarVisibility(false);
+        viewerWin.loadURL(localUrl);
+
+        // Block DevTools on the viewer window's web contents
+        viewerWin.webContents.on("devtools-opened", () => {
+          viewerWin.webContents.closeDevTools();
+        });
       });
-      return { action: "deny" };
+
+      return { action: "deny" }; // prevent default browser-based new window
     }
-    // Block all other external new-window attempts
+
+    // Block all other external URLs
     return { action: "deny" };
   });
 
-  // Also intercept same-window navigation to Vercel URLs (e.g. href clicks)
+  // Intercept same-window navigation to Vercel URLs
   contents.on("will-navigate", (event, url) => {
     if (url.startsWith("https://krypts.vercel.app")) {
       event.preventDefault();
