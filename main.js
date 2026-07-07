@@ -83,13 +83,30 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// Prevent opening new windows (e.g. via window.open() or target="_blank")
+// Prevent opening new windows — but intercept Krypts viewer URLs and load
+// them inside the current Electron window, rewritten to localhost:3000.
 app.on("web-contents-created", (_event, contents) => {
-  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  contents.setWindowOpenHandler(({ url }) => {
+    // Rewrite Vercel viewer links → localhost so they open inside the app
+    if (url.includes("krypts.vercel.app")) {
+      const localUrl = url.replace("https://krypts.vercel.app", "http://localhost:3000");
+      // Load in the main window after a short tick
+      setImmediate(() => {
+        if (mainWindow) mainWindow.loadURL(localUrl);
+      });
+      return { action: "deny" };
+    }
+    // Block all other external new-window attempts
+    return { action: "deny" };
+  });
 
-  // Also disable right-click context menus from inside the web content
-  contents.on("context-menu", (e) => {
-    e.preventDefault();
+  // Also intercept same-window navigation to Vercel URLs (e.g. href clicks)
+  contents.on("will-navigate", (event, url) => {
+    if (url.startsWith("https://krypts.vercel.app")) {
+      event.preventDefault();
+      const localUrl = url.replace("https://krypts.vercel.app", "http://localhost:3000");
+      if (mainWindow) mainWindow.loadURL(localUrl);
+    }
   });
 
   // Block DevTools from being opened programmatically
