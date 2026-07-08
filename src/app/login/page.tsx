@@ -45,29 +45,22 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center p-4 overflow-hidden">
-      {/* Shader background — lazy loaded so login form appears instantly */}
-      <div className="absolute inset-0 z-0">
-        <Suspense fallback={<div className="h-full w-full bg-zinc-950" />}>
-          <ShaderAnimation />
-        </Suspense>
-      </div>
-      <div className="absolute inset-0 z-0 bg-black/40" />
+    <div className="dark relative flex min-h-screen items-center justify-center p-4 overflow-hidden bg-just-black font-mori">
 
       <div className="relative z-10 w-full max-w-md space-y-6">
         {/* Logo */}
         <div className="flex flex-col items-center gap-2 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-            <Shield className="h-6 w-6 text-white" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-shockingly-green/30 bg-shockingly-green/10">
+            <Shield className="h-6 w-6 text-shockingly-green" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">Krypts DRM</h1>
-          <p className="text-sm text-gray-300">Sign in to your account</p>
+          <h1 className="text-2xl font-bold tracking-tight text-surface-cream">Krypts DRM</h1>
+          <p className="text-sm text-surface-50">Sign in to your account</p>
         </div>
 
-        <Card className="border-white/10 bg-white/5 backdrop-blur-xl">
+        <Card className="border-surface-25/50 bg-off-black backdrop-blur-xl">
           <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl text-white">Welcome back</CardTitle>
-            <CardDescription className="text-gray-400">Enter your credentials to access your dashboard</CardDescription>
+            <CardTitle className="text-xl text-surface-cream">Welcome back</CardTitle>
+            <CardDescription className="text-surface-50">Enter your credentials to access your dashboard</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -118,9 +111,9 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-4 text-center text-sm text-muted-foreground">
+            <div className="mt-4 text-center text-sm text-surface-50">
               Don&apos;t have an account?{" "}
-              <Link href="/signup" className="font-medium text-primary hover:underline">
+              <Link href="/signup" className="font-medium text-shockingly-green hover:underline">
                 Sign up
               </Link>
             </div>

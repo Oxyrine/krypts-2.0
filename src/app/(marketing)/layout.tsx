@@ -7,7 +7,10 @@ export default function MarketingLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex min-h-screen flex-col">
+    // The `dark` class here activates all Tailwind dark: variants for
+    // every child section so the marketing page always looks dark,
+    // regardless of the user's system or app theme setting.
+    <div className="dark flex min-h-screen flex-col bg-just-black">
       <Navbar />
       <main className="flex-1">{children}</main>
       <Footer />
