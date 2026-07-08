@@ -99,54 +99,48 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     if user.account_status == AccountStatus.suspended:
         raise HTTPException(status_code=403, detail="Account temporarily suspended.")
 
-    # --- Rapid session detection ---
-    r = _get_redis()
-    redis_key = f"last_login:{user.user_id}"
-    try:
-        last_login_ts = await r.get(redis_key)
-        now_ts = datetime.now(timezone.utc).timestamp()
+    # --- Rapid session detection (DB Fallback for Local Testing) ---
+    now_utc = datetime.now(timezone.utc)
+    if user.last_login_time is not None:
+        elapsed = (now_utc - user.last_login_time).total_seconds()
+        
+        if elapsed < settings.rapid_session_threshold_seconds:
+            user.rapid_session_count += 1
 
-        if last_login_ts is not None:
-            elapsed = now_ts - float(last_login_ts)
-            if elapsed < settings.rapid_session_threshold_seconds:
-                user.rapid_session_count += 1
-
-                if user.rapid_session_count == 1:
-                    user.warning_count += 1
-                    alert = SecurityAlert(
-                        user_id=user.user_id,
-                        alert_type=AlertType.rapid_session,
-                        description=(
-                            f"Warning: rapid login detected for {user.email} "
-                            f"(session gap: {elapsed:.0f}s)"
-                        ),
-                        ip_address=request.client.host if request.client else None,
-                    )
-                    db.add(alert)
-                elif user.rapid_session_count == 2:
-                    user.account_status = AccountStatus.suspended
-                    user.suspension_count += 1
-                    alert = SecurityAlert(
-                        user_id=user.user_id,
-                        alert_type=AlertType.suspended,
-                        description=f"Account suspended: repeated rapid sessions for {user.email}",
-                        ip_address=request.client.host if request.client else None,
-                    )
-                    db.add(alert)
-                elif user.rapid_session_count >= 3:
-                    user.account_status = AccountStatus.banned
-                    alert = SecurityAlert(
-                        user_id=user.user_id,
-                        alert_type=AlertType.banned,
-                        description=f"Account banned: excessive rapid sessions for {user.email}",
-                        ip_address=request.client.host if request.client else None,
-                    )
-                    db.add(alert)
-
-        # Update Redis last-login timestamp
-        await r.set(redis_key, str(now_ts), ex=300)
-    except Exception:
-        pass  # Redis unavailable — fail open
+            if user.rapid_session_count == 1:
+                user.warning_count += 1
+                alert = SecurityAlert(
+                    user_id=user.user_id,
+                    alert_type=AlertType.rapid_session,
+                    description=(
+                        f"Warning: rapid login detected for {user.email} "
+                        f"(session gap: {elapsed:.0f}s)"
+                    ),
+                    ip_address=request.client.host if request.client else None,
+                )
+                db.add(alert)
+            elif user.rapid_session_count == 2:
+                user.account_status = AccountStatus.suspended
+                user.suspension_count += 1
+                alert = SecurityAlert(
+                    user_id=user.user_id,
+                    alert_type=AlertType.suspended,
+                    description=f"Account suspended: repeated rapid sessions for {user.email}",
+                    ip_address=request.client.host if request.client else None,
+                )
+                db.add(alert)
+            elif user.rapid_session_count >= 3:
+                user.account_status = AccountStatus.banned
+                alert = SecurityAlert(
+                    user_id=user.user_id,
+                    alert_type=AlertType.banned,
+                    description=f"Account banned: excessive rapid sessions for {user.email}",
+                    ip_address=request.client.host if request.client else None,
+                )
+                db.add(alert)
+        else:
+            # If they waited long enough, reset the counter
+            user.rapid_session_count = 0
 
     # Check again after possible status change
     if user.account_status == AccountStatus.banned:
