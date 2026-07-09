@@ -8,18 +8,12 @@
   "files": [
     "main.js",
     "electron-preload.js",
+    "out/**/*",
     "public/**/*",
     "node_modules/**/*",
     "!node_modules/.bin",
     "!node_modules/electron-builder/**/*",
     "!**/*.map"
-  ],
-  "extraResources": [
-    {
-      "from": ".next",
-      "to": ".next",
-      "filter": ["**/*"]
-    }
   ],
   "win": {
     "target": [

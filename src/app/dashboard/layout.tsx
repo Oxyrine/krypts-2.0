@@ -26,8 +26,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { title: "Watermark Settings", href: "/dashboard/watermarks", icon: ShieldPlus },
     { title: "Analytics",          href: "/dashboard/analytics",  icon: Activity },
     { title: "API Keys",           href: "/dashboard/apikeys",    icon: Settings },
-    { title: "Admin Panel",        href: "/dashboard/admin",      icon: ShieldAlert },
   ]
+
+  // Only show Admin Panel if user is the admin
+  if (user?.email === "admin@example.com") {
+    navItems.push({ title: "Admin Panel", href: "/dashboard/admin", icon: ShieldAlert })
+  }
 
   const handleLogout = () => {
     logout()
