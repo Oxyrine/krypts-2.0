@@ -81,9 +81,15 @@ function PdfViewerInner() {
   const [validToken, setValidToken] = useState(!!token && !!fileId)
   const [userEmail, setUserEmail] = useState("")
   const [canDownload, setCanDownload] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(true)
 
   useEffect(() => {
+    setUserEmail(localStorage.getItem("krypts_user_email") || "")
     api.auth.me().then((u) => setUserEmail(u.email)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    setIsDesktop(typeof window !== "undefined" && !!(window as any).kryptsDesktop)
   }, [])
 
   useEffect(() => {
@@ -133,6 +139,12 @@ function PdfViewerInner() {
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+  }
+
+  // Enforce Desktop App only
+  if (!isDesktop) {
+    const { DesktopBlocker } = require("@/components/layout/desktop-blocker")
+    return <DesktopBlocker />
   }
 
   if (!validToken) {
