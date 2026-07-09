@@ -143,53 +143,90 @@ export default function TokensPage() {
               Token Generated
             </CardTitle>
             <CardDescription>
-              Share this token securely. It expires at {new Date(result.expires_at).toLocaleString()}.
+              Share this with your recipient. Expires at {new Date(result.expires_at).toLocaleString()}.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Access Token</Label>
-              <div className="flex gap-2">
-                <Input value={result.token} readOnly className="font-mono text-xs" />
-                <Button
-                  variant="outline" size="icon"
-                  onClick={() => { navigator.clipboard.writeText(result.token); toast.success("Token copied!") }}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+          <CardContent className="space-y-5">
 
-            {viewerBase && typeof window !== "undefined" && (
-              <div className="space-y-2">
-                <Label>Viewer URL</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={`${window.location.origin}${viewerBase}${result.token}`}
-                    readOnly
-                    className="font-mono text-xs"
-                  />
-                  <Button
-                    variant="outline" size="icon"
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}${viewerBase}${result.token}`)
-                      toast.success("URL copied!")
-                    }}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="default" size="icon"
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                    onClick={() => window.open(`${window.location.origin}${viewerBase}${result.token}`, "_blank")}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
+            {/* ── App Link (primary) ─────────────────────────────────── */}
+            {viewerBase && typeof window !== "undefined" && (() => {
+              const viewPath = viewerBase.replace(/^\//, "") // strip leading slash → "view/image?..."
+              const appLink = `krypts://${viewPath}${result.token}`
+              const webLink = `${window.location.origin}${viewerBase}${result.token}`
 
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              const copyText = (text: string, label: string) => {
+                navigator.clipboard.writeText(text)
+                toast.success(`${label} copied!`)
+              }
+
+              const sendEmail = () => {
+                const subject = encodeURIComponent("Krypts Secure File — Action Required")
+                const body = encodeURIComponent(
+                  `Hi,\n\nYou have been granted secure access to a protected file via Krypts DRM.\n\n` +
+                  `To view it, you need the Krypts Desktop App (required for screenshot protection).\n\n` +
+                  `STEP 1 — Download Krypts Desktop App:\n` +
+                  `https://github.com/Oxyrine/krypts-2.0/releases/download/v0.1.0/Krypts.DRM.Setup.0.1.0.exe\n\n` +
+                  `STEP 2 — Click this link to open the file directly in the app:\n` +
+                  `${appLink}\n\n` +
+                  `(Already installed? Just click the link above — Windows will open it automatically.)\n\n` +
+                  `This link expires at: ${new Date(result.expires_at).toLocaleString()}\n\n` +
+                  `— Sent via Krypts DRM`
+                )
+                window.open(`mailto:?subject=${subject}&body=${body}`)
+              }
+
+              return (
+                <>
+                  {/* App Link */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-semibold">App Link <span className="text-green-500 text-xs font-normal ml-1">★ Recommended</span></Label>
+                      <span className="text-xs text-muted-foreground">Opens directly in Krypts Desktop App</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input value={appLink} readOnly className="font-mono text-xs bg-green-500/5 border-green-500/30" />
+                      <Button variant="outline" size="icon" onClick={() => copyText(appLink, "App link")}>
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Paste this link in email or chat. If the recipient has Krypts installed, clicking it launches the secure viewer directly — no browser step.
+                    </p>
+                  </div>
+
+                  {/* Web Link fallback */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm">Web Link <span className="text-xs text-muted-foreground ml-1">(fallback)</span></Label>
+                      <span className="text-xs text-muted-foreground">Shows download prompt in browser</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input value={webLink} readOnly className="font-mono text-xs" />
+                      <Button variant="outline" size="icon" onClick={() => copyText(webLink, "Web link")}>
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Email share */}
+                  <div className="pt-2 border-t border-zinc-800">
+                    <Button
+                      className="w-full bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 gap-2"
+                      variant="outline"
+                      onClick={sendEmail}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Share via Email (opens your mail client)
+                    </Button>
+                    <p className="text-xs text-muted-foreground text-center mt-2">
+                      Opens a pre-written email with the app link + install instructions ready to send.
+                    </p>
+                  </div>
+                </>
+              )
+            })()}
+
+            <div className="flex items-center gap-2 text-xs text-muted-foreground border-t border-zinc-800 pt-3">
               <Clock className="h-3 w-3" />
               Token ID: {result.id}
             </div>
@@ -199,3 +236,4 @@ export default function TokensPage() {
     </div>
   )
 }
+
