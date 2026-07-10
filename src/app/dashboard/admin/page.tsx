@@ -3,11 +3,12 @@
 import useSWR from "swr"
 import Link from "next/link"
 import { useState } from "react"
-import { ShieldAlert, ShieldCheck, ShieldX, ShieldOff, RefreshCw, Bell } from "lucide-react"
+import { ShieldAlert, ShieldCheck, ShieldX, ShieldOff, RefreshCw, Bell, Search } from "lucide-react"
 import { toast } from "sonner"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -48,6 +49,7 @@ export default function AdminPage() {
     { onError: () => toast.error("Failed to load users.") }
   )
   const [actionUserId, setActionUserId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const handleAction = async (
     userId: string,
@@ -74,6 +76,15 @@ export default function AdminPage() {
 
   const suspended = users.filter(u => u.account_status === "suspended").length
   const banned = users.filter(u => u.account_status === "banned").length
+
+  const filteredUsers = users.filter((u) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      u.email.toLowerCase().includes(q) ||
+      (u.full_name && u.full_name.toLowerCase().includes(q)) ||
+      u.id.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -115,9 +126,21 @@ export default function AdminPage() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>User Management</CardTitle>
-          <CardDescription>All registered users. Rapid-session detection is active.</CardDescription>
+        <CardHeader className="flex flex-row justify-between items-center space-y-0">
+          <div>
+            <CardTitle>User Management</CardTitle>
+            <CardDescription>All registered users. Rapid-session detection is active.</CardDescription>
+          </div>
+          <div className="relative w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search by email, name, or ID..."
+              className="pl-9"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -137,12 +160,12 @@ export default function AdminPage() {
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">Loading users...</TableCell>
                 </TableRow>
-              ) : users.length === 0 ? (
+              ) : filteredUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No users found.</TableCell>
+                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No users found matching "{searchQuery}".</TableCell>
                 </TableRow>
               ) : (
-                users.map(user => (
+                filteredUsers.map(user => (
                   <TableRow key={user.id}>
                     <TableCell>
                       <div className="font-medium text-sm">{user.email}</div>
