@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Shield, AlertTriangle, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { API_BASE, api } from "@/lib/api"
+import { useTelemetry } from "@/lib/useTelemetry"
 
 const STORAGE_KEY = "krypts_watermark_settings"
 
@@ -82,6 +83,9 @@ function PdfViewerInner() {
   const [userEmail, setUserEmail] = useState("")
   const [canDownload, setCanDownload] = useState(false)
   const [isDesktop, setIsDesktop] = useState(true)
+  const [isHoneypot, setIsHoneypot] = useState(false)
+
+  const { reportScrubbing } = useTelemetry(fileId)
 
   useEffect(() => {
     setUserEmail(localStorage.getItem("krypts_user_email") || "")
@@ -102,6 +106,10 @@ function PdfViewerInner() {
         if (resp.valid) {
           setValidToken(true)
           setCanDownload(!!resp.permissions?.download)
+          if (resp.is_honeypot) {
+            setIsHoneypot(true)
+            api.analytics.submitTelemetry("ip_mismatch", { fileId }).catch(() => {})
+          }
         } else {
           setValidToken(false)
         }
@@ -161,7 +169,21 @@ function PdfViewerInner() {
     )
   }
 
-  const pageUrl = `${API_BASE}/pdf/${fileId}/page/${currentPage}?token=${token}`
+  const pageUrl = isHoneypot ? "/decoy.pdf" : `${API_BASE}/pdf/${fileId}/page/${currentPage}?token=${token}`
+
+  if (isHoneypot) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-center p-8">
+          <AlertTriangle className="h-10 w-10 text-yellow-500" />
+          <h2 className="text-xl font-semibold">Important Notice</h2>
+          <p className="text-muted-foreground text-sm">
+            This document has been redacted due to security policy restrictions.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -187,11 +209,11 @@ function PdfViewerInner() {
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-300 hover:text-white hover:bg-zinc-700" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-300 hover:text-white hover:bg-zinc-700" onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); reportScrubbing(); }} disabled={currentPage <= 1}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="text-sm text-zinc-300">Page {currentPage}</span>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-300 hover:text-white hover:bg-zinc-700" onClick={() => setCurrentPage(p => p + 1)}>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-300 hover:text-white hover:bg-zinc-700" onClick={() => { setCurrentPage(p => p + 1); reportScrubbing(); }}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

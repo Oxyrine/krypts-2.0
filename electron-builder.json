@@ -29,5 +29,10 @@
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "Krypts DRM"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "Oxyrine",
+    "repo": "Krypts"
   }
 }

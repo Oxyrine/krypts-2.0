@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { Shield, AlertTriangle, Download } from "lucide-react"
 import { API_BASE, api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { useTelemetry } from "@/lib/useTelemetry"
 
 const STORAGE_KEY = "krypts_watermark_settings"
 
@@ -78,6 +79,9 @@ function VideoViewerInner() {
   const [userEmail, setUserEmail] = useState<string>("")
   const [canDownload, setCanDownload] = useState(false)
   const [isDesktop, setIsDesktop] = useState(true)
+  const [isHoneypot, setIsHoneypot] = useState(false)
+
+  const { reportScrubbing } = useTelemetry(fileId)
 
   useEffect(() => {
     setUserEmail(localStorage.getItem("krypts_user_email") || "")
@@ -94,6 +98,10 @@ function VideoViewerInner() {
       .then((resp: any) => {
         if (resp.valid) {
           setCanDownload(!!resp.permissions?.download)
+          if (resp.is_honeypot) {
+            setIsHoneypot(true)
+            api.analytics.submitTelemetry("ip_mismatch", { fileId }).catch(() => {})
+          }
         }
       })
       .catch(() => {})
@@ -152,7 +160,19 @@ function VideoViewerInner() {
     )
   }
 
-  const videoUrl = `${API_BASE}/stream/video/${fileId}?token=${token}`
+  const videoUrl = isHoneypot ? "/decoy.mp4" : `${API_BASE}/stream/video/${fileId}?token=${token}`
+
+  if (isHoneypot) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-900">
+        <div className="flex flex-col items-center gap-3 text-center p-8 text-white">
+          <AlertTriangle className="h-10 w-10 text-yellow-500" />
+          <h2 className="text-xl font-semibold">Important Notice</h2>
+          <p className="text-zinc-400 text-sm">This video has been redacted due to security policy restrictions.</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -189,6 +209,7 @@ function VideoViewerInner() {
             disablePictureInPicture
             className="w-full rounded-xl shadow-2xl"
             onContextMenu={(e) => e.preventDefault()}
+            onSeeked={() => reportScrubbing()}
           >
             Your browser does not support secure video playback.
           </video>

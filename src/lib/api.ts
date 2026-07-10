@@ -57,6 +57,16 @@ export interface GenerateTokenResponse {
   file_id: string;
 }
 
+export interface ValidateTokenResponse {
+  valid: boolean;
+  file_id?: string;
+  user_id?: string;
+  expires_at?: string;
+  permissions?: Record<string, boolean>;
+  message: string;
+  is_honeypot?: boolean;
+}
+
 export interface ApiKeyResponse {
   id: string;
   key_prefix: string;
@@ -99,6 +109,7 @@ export interface AdminUserResponse {
   warning_count: number;
   suspension_count: number;
   rapid_session_count: number;
+  risk_score: number;
   security_token: string;
   created_at: string;
   last_login_time?: string;
@@ -214,7 +225,7 @@ export const api = {
       }),
 
     validate: (token: string, fileId?: string) =>
-      apiFetch("/validate-token", {
+      apiFetch<ValidateTokenResponse>("/validate-token", {
         method: "POST",
         body: JSON.stringify({ token, file_id: fileId }),
       }),
@@ -224,6 +235,11 @@ export const api = {
     usage: () => apiFetch<UsageAnalytics>("/analytics/usage"),
     securityEvents: (limit = 20) =>
       apiFetch<SecurityEventItem[]>(`/analytics/security-events?limit=${limit}`),
+    submitTelemetry: (eventType: string, metadata: Record<string, any> = {}) =>
+      apiFetch<{status: string, new_score: number}>("/analytics/telemetry", {
+        method: "POST",
+        body: JSON.stringify({ event_type: eventType, metadata }),
+      }),
   },
 
   apiKeys: {

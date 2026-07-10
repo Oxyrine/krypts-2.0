@@ -123,13 +123,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
             <div className="flex items-center gap-3">
               {/* Notifications */}
-              <Link
-                href="/dashboard/admin"
-                className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-surface-25 text-surface-50 hover:border-surface-cream hover:text-surface-cream transition-colors"
-              >
-                <Bell className="h-4 w-4" />
-                <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5 rounded-full bg-orangey" />
-              </Link>
+              {user?.email === "admin@example.com" && (
+                <Link
+                  href="/dashboard/admin"
+                  className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-surface-25 text-surface-50 hover:border-surface-cream hover:text-surface-cream transition-colors"
+                >
+                  <Bell className="h-4 w-4" />
+                  <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5 rounded-full bg-orangey" />
+                </Link>
+              )}
 
               {/* Theme toggle */}
               <ModeToggle />

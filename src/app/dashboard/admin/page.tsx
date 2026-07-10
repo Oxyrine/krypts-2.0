@@ -31,7 +31,17 @@ const StatusBadge = ({ status }: { status: string }) => {
   )
 }
 
+import { useRouter } from "next/navigation"
+import { useAuth } from "@/lib/auth-context"
+
 export default function AdminPage() {
+  const { user } = useAuth()
+  const router = useRouter()
+  
+  if (user && user.email !== "admin@example.com") {
+    router.push("/dashboard")
+    return null
+  }
   const { data: users = [], isLoading, mutate } = useSWR<AdminUserResponse[]>(
     'admin/users',
     api.admin.users,
@@ -115,6 +125,7 @@ export default function AdminPage() {
               <TableRow>
                 <TableHead>Email</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Threat Level</TableHead>
                 <TableHead>Warnings</TableHead>
                 <TableHead>Rapid Sessions</TableHead>
                 <TableHead>Last Login</TableHead>
@@ -124,11 +135,11 @@ export default function AdminPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">Loading users...</TableCell>
+                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">Loading users...</TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">No users found.</TableCell>
+                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No users found.</TableCell>
                 </TableRow>
               ) : (
                 users.map(user => (
@@ -138,6 +149,14 @@ export default function AdminPage() {
                       {user.full_name && <div className="text-xs text-muted-foreground">{user.full_name}</div>}
                     </TableCell>
                     <TableCell><StatusBadge status={user.account_status} /></TableCell>
+                    <TableCell>
+                      {user.risk_score > 0
+                        ? <Badge variant={user.risk_score > 80 ? "destructive" : "secondary"} className="text-xs">
+                            {user.risk_score}
+                          </Badge>
+                        : <span className="text-muted-foreground text-sm">0</span>
+                      }
+                    </TableCell>
                     <TableCell>
                       {user.warning_count > 0
                         ? <Badge variant="destructive" className="text-xs">{user.warning_count}</Badge>
