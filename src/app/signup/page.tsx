@@ -8,6 +8,7 @@ import { Eye, EyeOff, Lock, Mail, Shield, User } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -18,6 +19,7 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const { signup } = useAuth();
   const router = useRouter();
@@ -26,6 +28,10 @@ export default function SignupPage() {
     e.preventDefault();
     if (!email || !password) {
       toast.error("Email and password are required.");
+      return;
+    }
+    if (!termsAccepted) {
+      toast.error("You must agree to the Terms of Service.");
       return;
     }
     if (password.length < 6) {
@@ -123,6 +129,40 @@ export default function SignupPage() {
                 </div>
               </div>
 
+              <div className="flex items-start space-x-2 pt-2 pb-2">
+                <input
+                  type="checkbox"
+                  id="terms"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-surface-25/50 bg-off-black text-shockingly-green focus:ring-shockingly-green"
+                />
+                <Label htmlFor="terms" className="text-sm font-normal text-surface-50 leading-snug">
+                  I agree to the{" "}
+                  <Dialog>
+                    <DialogTrigger className="text-shockingly-green hover:underline">
+                      Terms of Service
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-off-black border-surface-25/50 text-surface-cream sm:rounded-xl">
+                      <DialogHeader>
+                        <DialogTitle className="text-xl">Krypts Terms of Service</DialogTitle>
+                        <DialogDescription className="text-surface-50">
+                          Last updated: July 2026
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 text-sm mt-4 text-surface-cream/80 leading-relaxed">
+                        <p><strong>1. Acceptance of Terms</strong><br/>By accessing or using Krypts DRM, you agree to be bound by these Terms of Service. If you do not agree, you may not use our services.</p>
+                        <p><strong>2. Description of Service</strong><br/>Krypts DRM provides digital rights management tools, secure hosting, and access control for digital content. You are solely responsible for ensuring you have the legal right and copyright ownership to distribute any content you upload.</p>
+                        <p><strong>3. Acceptable Use</strong><br/>You may not use our service for any illegal activities, distributing malware, or infringing on intellectual property rights. We reserve the right to suspend or ban accounts that violate these terms or generate excessively high risk scores.</p>
+                        <p><strong>4. Privacy & Data</strong><br/>We encrypt and protect your files using AES-256. We do not access the raw contents of your protected files without your explicit consent or as required by a lawful subpoena. Refer to our Privacy Policy for details on data retention.</p>
+                        <p><strong>5. Limitation of Liability</strong><br/>Krypts DRM is provided "as is" without any warranties. We are not liable for any data loss, piracy bypasses, unauthorized distributions, or business interruptions. Your use of the platform is at your own risk.</p>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                  {" "}and Privacy Policy.
+                </Label>
+              </div>
+
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Creating account..." : "Create account"}
               </Button>
@@ -137,8 +177,8 @@ export default function SignupPage() {
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-gray-400">
-          By signing up you agree to our Terms of Service • AES-256 Encrypted
+        <p className="text-center text-xs text-gray-500">
+          AES-256 Encrypted • Zero-Knowledge Architecture
         </p>
       </div>
     </div>
