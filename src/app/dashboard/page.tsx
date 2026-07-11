@@ -129,7 +129,7 @@ export default function DashboardOverview() {
           <CardContent className="pl-0 pb-4 pr-4 border-t pt-4">
             <div className="h-[300px] w-full mt-4">
               <Suspense fallback={<div className="h-full w-full animate-pulse rounded bg-muted" />}>
-                <LazyChart data={fallbackChartData} />
+                <LazyChart data={analytics?.auth_data && analytics.auth_data.length > 0 ? analytics.auth_data : fallbackChartData} />
               </Suspense>
             </div>
           </CardContent>

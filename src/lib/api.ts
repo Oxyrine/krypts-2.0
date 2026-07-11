@@ -90,6 +90,20 @@ export interface UsageAnalytics {
     timestamp: string;
     ip_address?: string;
   }>;
+  auth_data: Array<{
+    name: string;
+    sessions: number;
+    blocked: number;
+  }>;
+  content_data: Array<{
+    name: string;
+    value: number;
+    color: string;
+  }>;
+  geo_data: Array<{
+    name: string;
+    value: number;
+  }>;
 }
 
 export interface SecurityEventItem {
