@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
   LayoutDashboard, Upload, FileStack, Key, ShieldPlus,
-  Activity, Settings, Shield, Bell, LogOut, ChevronDown, ShieldAlert
+  Activity, Settings, Shield, Bell, LogOut, ChevronDown, ShieldAlert, Inbox, Users, ScanSearch
 } from "lucide-react"
 
 import { ModeToggle } from "@/components/mode-toggle"
@@ -19,19 +19,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, logout } = useAuth()
 
   const navItems = [
-    { title: "Overview",           href: "/dashboard",            icon: LayoutDashboard },
-    { title: "Upload Content",     href: "/dashboard/upload",     icon: Upload },
-    { title: "Content Manager",    href: "/dashboard/content",    icon: FileStack },
-    { title: "Token Generator",    href: "/dashboard/tokens",     icon: Key },
-    { title: "Watermark Settings", href: "/dashboard/watermarks", icon: ShieldPlus },
-    { title: "Analytics",          href: "/dashboard/analytics",  icon: Activity },
-    { title: "API Keys",           href: "/dashboard/apikeys",    icon: Settings },
-  ]
+    { title: "Overview",           href: "/dashboard",            icon: LayoutDashboard, adminOnly: false },
+    { title: "Inbox",              href: "/dashboard/inbox",      icon: Inbox,           adminOnly: false },
+    { title: "Groups",             href: "/dashboard/groups",     icon: Users,           adminOnly: false },
+    { title: "Upload Content",     href: "/dashboard/upload",     icon: Upload,          adminOnly: false },
+    { title: "Content Manager",    href: "/dashboard/content",    icon: FileStack,       adminOnly: false },
+    { title: "Token Generator",    href: "/dashboard/tokens",     icon: Key,             adminOnly: false },
+    { title: "Watermark Settings", href: "/dashboard/watermarks", icon: ShieldPlus,      adminOnly: false },
+    { title: "Forensic Scanner",   href: "/dashboard/scanner",    icon: ScanSearch,      adminOnly: true },
+    { title: "Analytics",          href: "/dashboard/analytics",  icon: Activity,        adminOnly: false },
+    { title: "API Keys",           href: "/dashboard/apikeys",    icon: Settings,        adminOnly: false },
+    { title: "Admin Panel",        href: "/dashboard/admin",      icon: ShieldAlert,     adminOnly: true },
+  ].filter(item => !item.adminOnly || user?.is_admin)
 
-  // Only show Admin Panel if user is the admin
-  if (user?.email === "admin@example.com") {
-    navItems.push({ title: "Admin Panel", href: "/dashboard/admin", icon: ShieldAlert })
-  }
 
   const handleLogout = () => {
     logout()
@@ -123,15 +123,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
             <div className="flex items-center gap-3">
               {/* Notifications */}
-              {user?.email === "admin@example.com" && (
-                <Link
-                  href="/dashboard/admin"
-                  className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-surface-25 text-surface-50 hover:border-surface-cream hover:text-surface-cream transition-colors"
-                >
-                  <Bell className="h-4 w-4" />
-                  <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5 rounded-full bg-orangey" />
-                </Link>
-              )}
+              <Link
+                href="/dashboard/admin"
+                className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-surface-25 text-surface-50 hover:border-surface-cream hover:text-surface-cream transition-colors"
+              >
+                <Bell className="h-4 w-4" />
+                <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5 rounded-full bg-orangey" />
+              </Link>
 
               {/* Theme toggle */}
               <ModeToggle />

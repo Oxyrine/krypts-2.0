@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import useSWR from "swr"
-import { FileVideo, FileText, Image as ImageIcon, Search, MoreHorizontal, ShieldCheck, Trash2, Key } from "lucide-react"
+import { FileVideo, FileText, Image as ImageIcon, Search, MoreHorizontal, ShieldCheck, Trash2, Key, Share2, Users } from "lucide-react"
 import { toast } from "sonner"
 import Link from "next/link"
 
@@ -15,8 +15,14 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
+} from "@/components/ui/dialog"
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { api, FileListResponse } from "@/lib/api"
+import { api, FileListResponse, GroupResponse } from "@/lib/api"
 
 const TypeIcon = ({ type }: { type: string }) => {
   if (type === "VIDEO") return <FileVideo className="h-4 w-4 text-blue-500" />
@@ -33,6 +39,11 @@ export default function ContentPage() {
   )
   const [search, setSearch] = useState("")
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  
+  const [shareFileId, setShareFileId] = useState<string | null>(null)
+  const [shareEmail, setShareEmail] = useState("")
+  const [shareGroupId, setShareGroupId] = useState("none")
+  const { data: myGroups = [] } = useSWR<GroupResponse[]>('groups/list', api.groups.list)
 
   const handleDelete = async (fileId: string, filename: string) => {
     if (!confirm(`Delete "${filename}"? This cannot be undone.`)) return
@@ -45,6 +56,27 @@ export default function ContentPage() {
       toast.error(err.message || "Delete failed.")
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleShare = async () => {
+    if (!shareFileId) return
+    if (!shareEmail && shareGroupId === "none") {
+      toast.error("Please enter an email or select a group.")
+      return
+    }
+    try {
+      await api.inbox.share(
+        shareFileId,
+        shareEmail ? shareEmail : undefined,
+        shareGroupId !== "none" ? shareGroupId : undefined
+      )
+      toast.success("File shared successfully!")
+      setShareFileId(null)
+      setShareEmail("")
+      setShareGroupId("none")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to share file.")
     }
   }
 
@@ -133,7 +165,11 @@ export default function ContentPage() {
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => window.location.href = `/dashboard/tokens?file_id=${file.id}`}>
                           <Key className="mr-2 h-4 w-4" />
-                          Generate Token
+                          Generate Link Token
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setShareFileId(file.id)}>
+                          <Share2 className="mr-2 h-4 w-4" />
+                          Share Internally
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -159,6 +195,48 @@ export default function ContentPage() {
           {filtered.length} file{filtered.length !== 1 ? "s" : ""} • All encrypted with AES-256
         </p>
       )}
+
+      <Dialog open={!!shareFileId} onOpenChange={(open) => !open && setShareFileId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share File Internally</DialogTitle>
+            <DialogDescription>
+              Share this file directly with another user or group. They will receive it in their Inbox.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Target User Email</label>
+              <Input
+                placeholder="user@example.com"
+                value={shareEmail}
+                onChange={(e) => setShareEmail(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center justify-center text-muted-foreground text-sm uppercase">Or</div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Broadcast to Group</label>
+              <Select value={shareGroupId} onValueChange={(val) => setShareGroupId(val || "none")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a group" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">-- Do not use group --</SelectItem>
+                  {myGroups.map((g) => (
+                    <SelectItem key={g.group_id} value={g.group_id}>
+                      {g.name} ({g.member_count} members)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShareFileId(null)}>Cancel</Button>
+            <Button onClick={handleShare}>Share File</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

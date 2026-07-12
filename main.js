@@ -4,6 +4,7 @@ const path = require("path");
 const http = require("http");
 const fs = require("fs");
 const url = require("url");
+const { spawn } = require("child_process");
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 const DEV_MODE = false; // FORCE PROD MODE FOR DEBUGGING
@@ -11,6 +12,28 @@ const DEV_URL = "http://localhost:3000";
 
 let PROD_URL = ""; // Will be set once the local server starts
 let mainWindow = null;
+let backendProcess = null;
+
+function startBackendServer() {
+  const backendPath = app.isPackaged 
+    ? path.join(process.resourcesPath, "backend-server.exe")
+    : path.join(__dirname, "..", "backend", "dist", "backend-server.exe");
+
+  console.log("Starting backend at:", backendPath);
+  try {
+    const userDataPath = app.getPath("userData");
+    const dbPath = path.join(userDataPath, "krypts.db");
+    const dbUrl = `sqlite+aiosqlite:///${dbPath.replace(/\\/g, "/")}`;
+
+    backendProcess = spawn(backendPath, [], {
+      cwd: path.dirname(backendPath),
+      env: { ...process.env, DATABASE_URL: dbUrl },
+      stdio: "ignore"
+    });
+  } catch (err) {
+    console.error("Failed to start backend:", err);
+  }
+}
 
 // ─── Local Static Server for Next.js Export ───────────────────────────────
 function startLocalServer() {
@@ -182,6 +205,9 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
+    // Start bundled Python backend
+    startBackendServer();
+
     // In production, start the local static server
     if (!DEV_MODE) {
       PROD_URL = await startLocalServer();
@@ -238,6 +264,12 @@ if (!gotTheLock) {
   app.on("window-all-closed", () => {
     globalShortcut.unregisterAll();
     if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("will-quit", () => {
+    if (backendProcess) {
+      backendProcess.kill();
+    }
   });
 
   // macOS: handle deep links when app is already running
