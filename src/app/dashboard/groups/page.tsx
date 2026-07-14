@@ -120,9 +120,9 @@ export default function GroupsPage() {
   const handleViewFile = (file: GroupFileResponse) => {
     const ct = file.content_type?.toLowerCase() || ""
     let viewerPath = "/view/pdf"
-    if (ct.startsWith("video/")) viewerPath = "/view/video"
-    else if (ct.startsWith("image/")) viewerPath = "/view/image"
-    else if (ct.includes("pdf")) viewerPath = "/view/pdf"
+    if (ct === "video" || ct.startsWith("video/")) viewerPath = "/view/video"
+    else if (ct === "image" || ct.startsWith("image/")) viewerPath = "/view/image"
+    else if (ct === "pdf" || ct.includes("pdf")) viewerPath = "/view/pdf"
 
     const url = `${viewerPath}?file_id=${file.file_id}&token=${file.access_token}`
     window.open(url, "_blank")
