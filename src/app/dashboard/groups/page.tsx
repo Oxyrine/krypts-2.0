@@ -15,7 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Users, Plus, UserPlus, FileText, Eye } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { Users, Plus, UserPlus, FileText, Eye, Trash2 } from "lucide-react"
 
 export default function GroupsPage() {
   const [groups, setGroups] = useState<GroupResponse[]>([])
@@ -37,9 +38,29 @@ export default function GroupsPage() {
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [filesError, setFilesError] = useState("")
 
+  const [currentEmail, setCurrentEmail] = useState("")
+  const [hiddenShareIds, setHiddenShareIds] = useState<string[]>([])
+  
+  const [selectedShareIds, setSelectedShareIds] = useState<string[]>([])
+  const [showHiddenFiles, setShowHiddenFiles] = useState(false)
+
   useEffect(() => {
     fetchGroups()
+    fetchUser()
+    const storedHidden = localStorage.getItem("hiddenGroupFiles")
+    if (storedHidden) {
+      try {
+        setHiddenShareIds(JSON.parse(storedHidden))
+      } catch (e) {}
+    }
   }, [])
+
+  const fetchUser = async () => {
+    try {
+      const user = await api.auth.me()
+      setCurrentEmail(user.email)
+    } catch (e) {}
+  }
 
   const fetchGroups = async () => {
     try {
@@ -114,6 +135,51 @@ export default function GroupsPage() {
       setFilesError(err.message || "Failed to fetch files")
     } finally {
       setLoadingFiles(false)
+    }
+  }
+
+  const handleDeleteFile = async (groupId: string, shareId: string) => {
+    try {
+      await api.groups.deleteFile(groupId, shareId)
+      // Refresh files
+      handleViewFiles(groupId)
+    } catch (err: any) {
+      console.error("Failed to delete file share", err)
+      setFilesError(err.message || "Failed to delete file")
+    }
+  }
+
+  const handleHideFile = (shareId: string) => {
+    const updated = [...hiddenShareIds, shareId]
+    setHiddenShareIds(updated)
+    localStorage.setItem("hiddenGroupFiles", JSON.stringify(updated))
+  }
+
+  const handleUnhideFile = (shareId: string) => {
+    const updated = hiddenShareIds.filter(id => id !== shareId)
+    setHiddenShareIds(updated)
+    localStorage.setItem("hiddenGroupFiles", JSON.stringify(updated))
+  }
+
+  const toggleFileSelection = (shareId: string) => {
+    setSelectedShareIds(prev => 
+      prev.includes(shareId) 
+        ? prev.filter(id => id !== shareId)
+        : [...prev, shareId]
+    )
+  }
+
+  const handleBulkDelete = async (groupId: string) => {
+    if (selectedShareIds.length === 0) return
+    try {
+      await Promise.all(
+        selectedShareIds.map(shareId => api.groups.deleteFile(groupId, shareId))
+      )
+      setSelectedShareIds([])
+      handleViewFiles(groupId)
+    } catch (err: any) {
+      console.error("Failed to delete some files", err)
+      setFilesError(err.message || "Failed to delete files")
     }
   }
 
@@ -312,7 +378,26 @@ export default function GroupsPage() {
               Files shared securely with this group. Click a file to view it.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-3 max-h-[60vh] overflow-y-auto">
+
+          {/* Toolbar */}
+          <div className="flex items-center justify-between border-b pb-3">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="show-hidden"
+                checked={showHiddenFiles}
+                onCheckedChange={setShowHiddenFiles}
+              />
+              <Label htmlFor="show-hidden">Show Hidden Files</Label>
+            </div>
+            {selectedShareIds.length > 0 && (
+              <Button size="sm" variant="destructive" onClick={() => handleBulkDelete(activeFilesGroupId!)}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Selected ({selectedShareIds.length})
+              </Button>
+            )}
+          </div>
+
+          <div className="py-2 space-y-3 max-h-[60vh] overflow-y-auto">
             {loadingFiles ? (
               <div className="flex justify-center p-4">
                 <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-primary"></div>
@@ -321,35 +406,85 @@ export default function GroupsPage() {
               <div className="text-center py-4">
                 <p className="text-sm text-destructive">{filesError}</p>
               </div>
-            ) : groupFiles.length === 0 ? (
+            ) : groupFiles.filter(f => showHiddenFiles || !hiddenShareIds.includes(f.share_id)).length === 0 ? (
               <div className="text-center py-6">
                 <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">No files shared with this group yet.</p>
+                <p className="text-sm text-muted-foreground">No files to show.</p>
                 <p className="text-xs text-muted-foreground mt-1">Share files from your Content Manager.</p>
               </div>
             ) : (
-              groupFiles.map(file => (
-                <div key={file.share_id} className="flex items-center justify-between border rounded-lg p-3 hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm truncate">{file.filename}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Shared by {file.shared_by_email}
-                      </p>
+              groupFiles
+                .filter(f => showHiddenFiles || !hiddenShareIds.includes(f.share_id))
+                .map(file => {
+                  const isHidden = hiddenShareIds.includes(file.share_id)
+                  const isMine = file.shared_by_email === currentEmail
+                  const isSelected = selectedShareIds.includes(file.share_id)
+                  
+                  return (
+                    <div 
+                      key={file.share_id} 
+                      className={`flex items-center justify-between border rounded-lg p-3 transition-colors ${
+                        isHidden ? 'bg-muted/30 opacity-75' : 'hover:bg-muted/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {isMine && (
+                          <input 
+                            type="checkbox" 
+                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary mr-1"
+                            checked={isSelected}
+                            onChange={() => toggleFileSelection(file.share_id)}
+                          />
+                        )}
+                        <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">
+                            {file.filename}
+                            {isHidden && <span className="ml-2 text-xs border px-1 rounded bg-muted">Hidden</span>}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Shared by {file.shared_by_email}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        {isMine ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDeleteFile(activeFilesGroupId!, file.share_id)}
+                          >
+                            Delete
+                          </Button>
+                        ) : isHidden ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleUnhideFile(file.share_id)}
+                          >
+                            Unhide
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleHideFile(file.share_id)}
+                          >
+                            Hide
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handleViewFile(file)}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => handleViewFile(file)}
-                    className="shrink-0 ml-2"
-                  >
-                    <Eye className="h-4 w-4 mr-1" />
-                    View
-                  </Button>
-                </div>
-              ))
+                  )
+              })
             )}
           </div>
           <DialogFooter>
