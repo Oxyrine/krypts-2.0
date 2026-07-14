@@ -235,6 +235,19 @@ function createWindow(deepLinkUrl) {
     mainWindow.loadURL(PROD_URL);
   }
 
+  // ─── Intercept window.open() from the renderer ───────────────────────────
+  // By default Electron 14+ blocks all window.open calls. We catch them here
+  // and route view URLs into the secure protected-viewer window.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    console.log("[window.open intercepted]", url);
+    // Any internal /view/ page → open in protected viewer
+    if (url.includes("/view/")) {
+      openProtectedViewer(url);
+    }
+    // Always deny the default Electron popup (we handled it above)
+    return { action: "deny" };
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
