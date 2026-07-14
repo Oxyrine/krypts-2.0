@@ -109,6 +109,59 @@ export default function LoginPage() {
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Signing in..." : "Sign in"}
               </Button>
+
+              {/* Developer Fast Login (Hackathon) */}
+              <div className="mt-6 border-t border-surface-25/50 pt-4">
+                <p className="text-xs text-surface-50 text-center mb-3">Developer Quick Login</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    className="text-xs"
+                    disabled={loading}
+                    onClick={async () => {
+                      setEmail("alice@krypts.com");
+                      setPassword("password123");
+                      setLoading(true);
+                      try {
+                        await login("alice@krypts.com", "password123");
+                        toast.success("Logged in as Alice!");
+                        router.push("/dashboard");
+                      } catch (err: any) {
+                        toast.error(err.message || "Login failed");
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    Login as Alice
+                  </Button>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    className="text-xs"
+                    disabled={loading}
+                    onClick={async () => {
+                      setEmail("bob@krypts.com");
+                      setPassword("password123");
+                      setLoading(true);
+                      try {
+                        await login("bob@krypts.com", "password123");
+                        toast.success("Logged in as Bob!");
+                        router.push("/dashboard");
+                      } catch (err: any) {
+                        toast.error(err.message || "Login failed");
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    Login as Bob
+                  </Button>
+                </div>
+              </div>
             </form>
 
             <div className="mt-4 text-center text-sm text-surface-50">
