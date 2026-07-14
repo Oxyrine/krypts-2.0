@@ -4,7 +4,7 @@ const path = require("path");
 const http = require("http");
 const fs = require("fs");
 const url = require("url");
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 const DEV_MODE = false; // FORCE PROD MODE FOR DEBUGGING
@@ -14,26 +14,95 @@ let PROD_URL = ""; // Will be set once the local server starts
 let mainWindow = null;
 let backendProcess = null;
 
+// ─── Free a port by killing any process using it ─────────────────────────────
+function killProcessOnPort(port) {
+  try {
+    const result = execSync(`netstat -ano | findstr ":${port} "`, { encoding: "utf8" });
+    const lines = result.trim().split("\n");
+    const pids = new Set();
+    for (const line of lines) {
+      const parts = line.trim().split(/\s+/);
+      // parts: [Proto, LocalAddress, ForeignAddress, State, PID]
+      if (parts.length >= 5) {
+        const localAddr = parts[1] || "";
+        if (localAddr.endsWith(`:${port}`)) {
+          const pid = parts[4];
+          if (pid && pid !== "0") pids.add(pid);
+        }
+      }
+    }
+    for (const pid of pids) {
+      try {
+        execSync(`taskkill /PID ${pid} /F`, { encoding: "utf8" });
+        console.log(`[port-cleanup] Killed PID ${pid} which was holding port ${port}`);
+      } catch (e) {
+        console.log(`[port-cleanup] Could not kill PID ${pid}:`, e.message);
+      }
+    }
+  } catch (e) {
+    // findstr exits non-zero when no match — that's fine, port is free
+    console.log(`[port-cleanup] Port ${port} is free or netstat failed:`, e.message);
+  }
+}
+
 function startBackendServer() {
   const backendPath = app.isPackaged 
     ? path.join(process.resourcesPath, "backend-server.exe")
     : path.join(__dirname, "backend", "backend-server.exe");
 
   console.log("Starting backend at:", backendPath);
+  
+  if (!fs.existsSync(backendPath)) {
+    console.error("BACKEND EXE NOT FOUND at:", backendPath);
+    dialog.showErrorBox("Backend Missing", `Could not find backend at:\n${backendPath}`);
+    return;
+  }
+
+  // Free port 8000 if a stale process is holding it
+  console.log("[port-cleanup] Ensuring port 8000 is free...");
+  killProcessOnPort(8000);
+
   try {
     const userDataPath = app.getPath("userData");
     const dbPath = path.join(userDataPath, "krypts.db");
     const dbUrl = `sqlite+aiosqlite:///${dbPath.replace(/\\/g, "/")}`;
+    const logPath = path.join(userDataPath, "backend.log");
+
+    console.log("Backend DB path:", dbPath);
+    console.log("Backend log:", logPath);
+
+    const logStream = fs.openSync(logPath, "a");
 
     backendProcess = spawn(backendPath, [], {
       cwd: path.dirname(backendPath),
-      env: { ...process.env, DATABASE_URL: dbUrl },
-      stdio: "ignore"
+      env: {
+        ...process.env,
+        DATABASE_URL: dbUrl,
+        JWT_SECRET_KEY: "krypts-super-secret-jwt-key-change-in-prod-2024",
+        JWT_ALGORITHM: "HS256",
+        ACCESS_TOKEN_EXPIRE_MINUTES: "60",
+        MASTER_KEK: "krypts-master-kek-32bytes-change!!",
+        ADMIN_EMAIL: "admin@krypts.com",
+        RAPID_SESSION_THRESHOLD_SECONDS: "120",
+        RATE_LIMIT_REQUESTS: "60",
+        RATE_LIMIT_WINDOW_SECONDS: "60",
+      },
+      stdio: ["ignore", logStream, logStream]
     });
+
+    backendProcess.on("error", (err) => {
+      console.error("Backend process error:", err);
+    });
+    backendProcess.on("exit", (code, signal) => {
+      console.log(`Backend exited with code ${code}, signal ${signal}`);
+      console.log("Check log at:", logPath);
+    });
+
   } catch (err) {
     console.error("Failed to start backend:", err);
   }
 }
+
 
 // ─── Local Static Server for Next.js Export ───────────────────────────────
 function startLocalServer() {
