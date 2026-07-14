@@ -72,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     api.auth.logout().catch(() => {});
     localStorage.removeItem("access_token");
     localStorage.removeItem("cached_user");
+    if (typeof document !== 'undefined') document.body.style.pointerEvents = '';
     setUser(null);
   }, []);
 

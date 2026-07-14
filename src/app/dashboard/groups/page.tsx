@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { api, GroupResponse } from "@/lib/api"
+import { api, GroupResponse, GroupFileResponse } from "@/lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Users, Plus, UserPlus } from "lucide-react"
+import { Users, Plus, UserPlus, FileText, Eye } from "lucide-react"
 
 export default function GroupsPage() {
   const [groups, setGroups] = useState<GroupResponse[]>([])
@@ -33,7 +33,7 @@ export default function GroupsPage() {
   const [membersError, setMembersError] = useState("")
 
   const [activeFilesGroupId, setActiveFilesGroupId] = useState<string | null>(null)
-  const [groupFiles, setGroupFiles] = useState<any[]>([])
+  const [groupFiles, setGroupFiles] = useState<GroupFileResponse[]>([])
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [filesError, setFilesError] = useState("")
 
@@ -105,6 +105,7 @@ export default function GroupsPage() {
     setActiveFilesGroupId(groupId)
     setLoadingFiles(true)
     setFilesError("")
+    setGroupFiles([])
     try {
       const files = await api.groups.getFiles(groupId)
       setGroupFiles(files)
@@ -114,6 +115,17 @@ export default function GroupsPage() {
     } finally {
       setLoadingFiles(false)
     }
+  }
+
+  const handleViewFile = (file: GroupFileResponse) => {
+    const ct = file.content_type?.toLowerCase() || ""
+    let viewerPath = "/view/pdf"
+    if (ct.startsWith("video/")) viewerPath = "/view/video"
+    else if (ct.startsWith("image/")) viewerPath = "/view/image"
+    else if (ct.includes("pdf")) viewerPath = "/view/pdf"
+
+    const url = `${viewerPath}?file_id=${file.file_id}&token=${file.access_token}`
+    window.open(url, "_blank")
   }
 
   return (
@@ -206,6 +218,7 @@ export default function GroupsPage() {
                     className="flex-1"
                     onClick={() => handleViewMembers(group.group_id)}
                   >
+                    <Users className="mr-2 h-4 w-4" />
                     Members
                   </Button>
                   
@@ -214,6 +227,7 @@ export default function GroupsPage() {
                     className="flex-1"
                     onClick={() => handleViewFiles(group.group_id)}
                   >
+                    <FileText className="mr-2 h-4 w-4" />
                     Files
                   </Button>
                 </div>
@@ -295,28 +309,45 @@ export default function GroupsPage() {
           <DialogHeader>
             <DialogTitle>Shared Files</DialogTitle>
             <DialogDescription>
-              Files shared securely with this group.
+              Files shared securely with this group. Click a file to view it.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+          <div className="py-4 space-y-3 max-h-[60vh] overflow-y-auto">
             {loadingFiles ? (
               <div className="flex justify-center p-4">
                 <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-primary"></div>
               </div>
             ) : filesError ? (
-              <p className="text-sm text-destructive text-center">{filesError}</p>
+              <div className="text-center py-4">
+                <p className="text-sm text-destructive">{filesError}</p>
+              </div>
             ) : groupFiles.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center">No files shared yet.</p>
+              <div className="text-center py-6">
+                <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">No files shared with this group yet.</p>
+                <p className="text-xs text-muted-foreground mt-1">Share files from your Content Manager.</p>
+              </div>
             ) : (
               groupFiles.map(file => (
-                <div key={file.share_id} className="flex items-center justify-between border-b pb-2 last:border-0 last:pb-0">
-                  <div>
-                    <p className="font-medium text-sm">{file.filename}</p>
-                    <p className="text-xs text-muted-foreground">Shared by {file.shared_by_email}</p>
+                <div key={file.share_id} className="flex items-center justify-between border rounded-lg p-3 hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">{file.filename}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Shared by {file.shared_by_email}
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground border px-2 py-1 rounded">
-                    {file.content_type.split('/')[0]}
-                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleViewFile(file)}
+                    className="shrink-0 ml-2"
+                  >
+                    <Eye className="h-4 w-4 mr-1" />
+                    View
+                  </Button>
                 </div>
               ))
             )}

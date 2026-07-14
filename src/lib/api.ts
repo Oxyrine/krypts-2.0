@@ -137,6 +137,16 @@ export interface GroupResponse {
   member_count: number;
 }
 
+export interface GroupFileResponse {
+  share_id: string;
+  file_id: string;
+  filename: string;
+  content_type: string;
+  shared_by_email: string;
+  shared_at: string;
+  access_token: string;
+}
+
 export interface InboxItem {
   share_id: string;
   file_id: string;
@@ -329,7 +339,7 @@ export const api = {
     getMembers: (groupId: string) =>
       apiFetch<GroupMemberResponse[]>(`/groups/${groupId}/members`),
     getFiles: (groupId: string) =>
-      apiFetch<InboxItem[]>(`/groups/${groupId}/files`),
+      apiFetch<GroupFileResponse[]>(`/groups/${groupId}/files`),
   },
 
   inbox: {
