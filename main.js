@@ -83,7 +83,7 @@ function startBackendServer() {
         JWT_ALGORITHM: "HS256",
         ACCESS_TOKEN_EXPIRE_MINUTES: "60",
         MASTER_KEK: "krypts-master-kek-32bytes-change!!",
-        ADMIN_EMAIL: "admin@krypts.com",
+        ADMIN_EMAIL: "admin@example.com",
         RAPID_SESSION_THRESHOLD_SECONDS: "120",
         RATE_LIMIT_REQUESTS: "60",
         RATE_LIMIT_WINDOW_SECONDS: "60",
