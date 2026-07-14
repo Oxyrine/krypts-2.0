@@ -13,6 +13,57 @@ import { Label } from "@/components/ui/label";
 
 const ShaderAnimation = lazy(() => import("@/components/ui/shader-animation").then(m => ({ default: m.ShaderAnimation })));
 
+function QuickLoginButtons({ onSelect }: { onSelect: (e: string, p: string) => void }) {
+  const [logins, setLogins] = useState<any[]>([])
+
+  const loadLogins = () => {
+    try {
+      setLogins(JSON.parse(localStorage.getItem('quickLogins') || '[]'))
+    } catch (e) {}
+  }
+
+  useEffect(() => {
+    loadLogins()
+    window.addEventListener('storage', loadLogins)
+    return () => window.removeEventListener('storage', loadLogins)
+  }, [])
+
+  if (logins.length === 0) {
+    return <p className="text-xs text-surface-50 italic text-center py-2">No quick logins saved yet.</p>
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2 justify-center">
+      {logins.map((l, i) => (
+        <div key={i} className="flex gap-1">
+          <Button 
+            type="button" 
+            variant="outline" 
+            size="sm"
+            className="text-xs h-7 px-2"
+            onClick={() => onSelect(l.email, l.password)}
+          >
+            {l.email.split('@')[0]}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-[10px] text-destructive h-7 w-7 p-0"
+            onClick={() => {
+              const updated = logins.filter(x => x.email !== l.email)
+              localStorage.setItem('quickLogins', JSON.stringify(updated))
+              setLogins(updated)
+            }}
+          >
+            x
+          </Button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -112,55 +163,50 @@ export default function LoginPage() {
 
               {/* Developer Fast Login (Hackathon) */}
               <div className="mt-6 border-t border-surface-25/50 pt-4">
-                <p className="text-xs text-surface-50 text-center mb-3">Developer Quick Login</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs text-surface-50">Developer Quick Logins</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
                     size="sm"
-                    className="text-xs"
-                    disabled={loading}
-                    onClick={async () => {
-                      setEmail("alice@krypts.com");
-                      setPassword("password123");
-                      setLoading(true);
-                      try {
-                        await login("alice@krypts.com", "password123");
-                        toast.success("Logged in as Alice!");
-                        router.push("/dashboard");
-                      } catch (err: any) {
-                        toast.error(err.message || "Login failed");
-                      } finally {
-                        setLoading(false);
+                    className="text-[10px] h-6 px-2 text-shockingly-green"
+                    onClick={() => {
+                      if (!email || !password) {
+                        toast.error("Type an email and password first to save as Quick Login");
+                        return;
+                      }
+                      const existing = JSON.parse(localStorage.getItem('quickLogins') || '[]');
+                      if (!existing.find((l: any) => l.email === email)) {
+                        const updated = [...existing, { email, password }];
+                        localStorage.setItem('quickLogins', JSON.stringify(updated));
+                        toast.success(`Saved ${email} to Quick Logins`);
+                        // Force a re-render to show the new button
+                        window.dispatchEvent(new Event('storage'));
+                      } else {
+                        toast.error("Account already in Quick Logins");
                       }
                     }}
                   >
-                    Login as Alice
-                  </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm"
-                    className="text-xs"
-                    disabled={loading}
-                    onClick={async () => {
-                      setEmail("bob@krypts.com");
-                      setPassword("password123");
-                      setLoading(true);
-                      try {
-                        await login("bob@krypts.com", "password123");
-                        toast.success("Logged in as Bob!");
-                        router.push("/dashboard");
-                      } catch (err: any) {
-                        toast.error(err.message || "Login failed");
-                      } finally {
-                        setLoading(false);
-                      }
-                    }}
-                  >
-                    Login as Bob
+                    + Save Current
                   </Button>
                 </div>
+                
+                <QuickLoginButtons 
+                  onSelect={async (e, p) => {
+                    setEmail(e);
+                    setPassword(p);
+                    setLoading(true);
+                    try {
+                      await login(e, p);
+                      toast.success(`Logged in as ${e}!`);
+                      router.push("/dashboard");
+                    } catch (err: any) {
+                      toast.error(err.message || "Login failed");
+                    } finally {
+                      setLoading(false);
+                    }
+                  }} 
+                />
               </div>
             </form>
 
