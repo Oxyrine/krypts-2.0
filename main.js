@@ -78,6 +78,7 @@ function startBackendServer() {
       env: {
         ...process.env,
         DATABASE_URL: dbUrl,
+        LOCAL_VAULT_PATH: path.join(userDataPath, "local_vault"),
         JWT_SECRET_KEY: "krypts-super-secret-jwt-key-change-in-prod-2024",
         JWT_ALGORITHM: "HS256",
         ACCESS_TOKEN_EXPIRE_MINUTES: "60",
