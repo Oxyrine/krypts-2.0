@@ -17,7 +17,7 @@ let backendProcess = null;
 function startBackendServer() {
   const backendPath = app.isPackaged 
     ? path.join(process.resourcesPath, "backend-server.exe")
-    : path.join(__dirname, "..", "backend", "dist", "backend-server.exe");
+    : path.join(__dirname, "backend", "backend-server.exe");
 
   console.log("Starting backend at:", backendPath);
   try {
