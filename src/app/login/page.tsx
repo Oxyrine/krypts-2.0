@@ -4,7 +4,7 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Eye, EyeOff, Lock, Mail, Shield } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, Shield, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,37 +13,54 @@ import { Label } from "@/components/ui/label";
 
 const ShaderAnimation = lazy(() => import("@/components/ui/shader-animation").then(m => ({ default: m.ShaderAnimation })));
 
-function QuickLoginButtons({ onSelect }: { onSelect: (e: string, p: string) => void }) {
-  const [logins, setLogins] = useState<any[]>([])
+// ---------------------------------------------------------------------------
+// Developer Quick Login — DEVELOPMENT ONLY
+// Stores only email addresses (no passwords) for rapid account switching.
+// NEVER expose this UI in production builds.
+// ---------------------------------------------------------------------------
 
-  const loadLogins = () => {
+function QuickLoginButtons({ onSelect }: { onSelect: (email: string) => void }) {
+  const [savedEmails, setSavedEmails] = useState<string[]>([]);
+
+  const loadEmails = () => {
     try {
-      setLogins(JSON.parse(localStorage.getItem('quickLogins') || '[]'))
+      // Migration: clean up any old entries that stored passwords
+      const raw = localStorage.getItem("quickLogins");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // Legacy format was [{email, password}]; strip passwords immediately
+        const emails: string[] = parsed.map((e: any) =>
+          typeof e === "string" ? e : e.email
+        );
+        localStorage.setItem("quickLogins", JSON.stringify(emails));
+        setSavedEmails(emails);
+      }
     } catch (e) {}
-  }
+  };
 
   useEffect(() => {
-    loadLogins()
-    window.addEventListener('storage', loadLogins)
-    return () => window.removeEventListener('storage', loadLogins)
-  }, [])
+    loadEmails();
+    window.addEventListener("storage", loadEmails);
+    return () => window.removeEventListener("storage", loadEmails);
+  }, []);
 
-  if (logins.length === 0) {
-    return <p className="text-xs text-surface-50 italic text-center py-2">No quick logins saved yet.</p>
+  if (savedEmails.length === 0) {
+    return <p className="text-xs text-surface-50 italic text-center py-2">No quick logins saved yet. Enter an email above then click + Save.</p>;
   }
 
   return (
     <div className="flex flex-wrap gap-2 justify-center">
-      {logins.map((l, i) => (
+      {savedEmails.map((email, i) => (
         <div key={i} className="flex gap-1">
-          <Button 
-            type="button" 
-            variant="outline" 
+          <Button
+            type="button"
+            variant="outline"
             size="sm"
             className="text-xs h-7 px-2"
-            onClick={() => onSelect(l.email, l.password)}
+            onClick={() => onSelect(email)}
+            title={email}
           >
-            {l.email.split('@')[0]}
+            {email.split("@")[0]}
           </Button>
           <Button
             type="button"
@@ -51,9 +68,9 @@ function QuickLoginButtons({ onSelect }: { onSelect: (e: string, p: string) => v
             size="sm"
             className="text-[10px] text-destructive h-7 w-7 p-0"
             onClick={() => {
-              const updated = logins.filter(x => x.email !== l.email)
-              localStorage.setItem('quickLogins', JSON.stringify(updated))
-              setLogins(updated)
+              const updated = savedEmails.filter((x) => x !== email);
+              localStorage.setItem("quickLogins", JSON.stringify(updated));
+              setSavedEmails(updated);
             }}
           >
             x
@@ -61,7 +78,7 @@ function QuickLoginButtons({ onSelect }: { onSelect: (e: string, p: string) => v
         </div>
       ))}
     </div>
-  )
+  );
 }
 
 export default function LoginPage() {
@@ -161,51 +178,46 @@ export default function LoginPage() {
                 {loading ? "Signing in..." : "Sign in"}
               </Button>
 
-              {/* Developer Fast Login (Hackathon) */}
-              <div className="mt-6 border-t border-surface-25/50 pt-4">
+              {/* ─── Developer Quick Login ─── DEV ENVIRONMENT ONLY ─── */}
+              <div className="mt-6 border-t border-amber-500/30 pt-4">
+                <div className="flex items-center gap-2 mb-2 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+                  <AlertTriangle className="h-3 w-3 text-amber-400 flex-shrink-0" />
+                  <p className="text-[10px] text-amber-400 font-medium">DEV ONLY — Quick Email Switcher</p>
+                </div>
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs text-surface-50">Developer Quick Logins</p>
+                  <p className="text-xs text-surface-50">Saved emails (enter password manually)</p>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     className="text-[10px] h-6 px-2 text-shockingly-green"
                     onClick={() => {
-                      if (!email || !password) {
-                        toast.error("Type an email and password first to save as Quick Login");
+                      if (!email) {
+                        toast.error("Enter an email address first.");
                         return;
                       }
-                      const existing = JSON.parse(localStorage.getItem('quickLogins') || '[]');
-                      if (!existing.find((l: any) => l.email === email)) {
-                        const updated = [...existing, { email, password }];
-                        localStorage.setItem('quickLogins', JSON.stringify(updated));
-                        toast.success(`Saved ${email} to Quick Logins`);
-                        // Force a re-render to show the new button
-                        window.dispatchEvent(new Event('storage'));
+                      const existing: string[] = JSON.parse(localStorage.getItem("quickLogins") || "[]");
+                      if (!existing.includes(email)) {
+                        const updated = [...existing, email];
+                        localStorage.setItem("quickLogins", JSON.stringify(updated));
+                        toast.success(`Saved ${email}`);
+                        window.dispatchEvent(new Event("storage"));
                       } else {
-                        toast.error("Account already in Quick Logins");
+                        toast.error("Email already saved.");
                       }
                     }}
                   >
-                    + Save Current
+                    + Save Email
                   </Button>
                 </div>
-                
-                <QuickLoginButtons 
-                  onSelect={async (e, p) => {
+
+                <QuickLoginButtons
+                  onSelect={(e) => {
+                    // Only fills in the email — password must be entered manually.
+                    // Passwords are never stored.
                     setEmail(e);
-                    setPassword(p);
-                    setLoading(true);
-                    try {
-                      await login(e, p);
-                      toast.success(`Logged in as ${e}!`);
-                      router.push("/dashboard");
-                    } catch (err: any) {
-                      toast.error(err.message || "Login failed");
-                    } finally {
-                      setLoading(false);
-                    }
-                  }} 
+                    toast.info("Email filled in. Enter your password to continue.");
+                  }}
                 />
               </div>
             </form>

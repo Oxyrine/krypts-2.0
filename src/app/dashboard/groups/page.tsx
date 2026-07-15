@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { toast } from "sonner"
 import { api, GroupResponse, GroupFileResponse } from "@/lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -183,15 +184,25 @@ export default function GroupsPage() {
     }
   }
 
-  const handleViewFile = (file: GroupFileResponse) => {
+  const handleViewFile = async (file: GroupFileResponse) => {
     const ct = file.content_type?.toLowerCase() || ""
     let viewerPath = "/view/pdf"
     if (ct === "video" || ct.startsWith("video/")) viewerPath = "/view/video"
     else if (ct === "image" || ct.startsWith("image/")) viewerPath = "/view/image"
     else if (ct === "pdf" || ct.includes("pdf")) viewerPath = "/view/pdf"
 
-    const url = `${viewerPath}?file_id=${file.file_id}&token=${file.access_token}`
-    window.open(url, "_blank")
+    try {
+      // Request a short-lived token on demand (not stored in list response)
+      const tokenResp = await api.tokens.generate({
+        file_id: file.file_id,
+        expires_in: "1h",
+        permissions: { view: true, stream: true, download: false },
+      })
+      const url = `${viewerPath}?file_id=${file.file_id}&token=${tokenResp.token}`
+      window.open(url, "_blank")
+    } catch (err: any) {
+      toast.error(err.message || "Could not open file — access denied or file not owned by you.")
+    }
   }
 
   return (

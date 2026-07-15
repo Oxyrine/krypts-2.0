@@ -20,10 +20,6 @@ export interface UserResponse {
   email: string;
   full_name?: string;
   account_status: "active" | "suspended" | "banned";
-  warning_count: number;
-  suspension_count: number;
-  rapid_session_count: number;
-  security_token: string;
   created_at: string;
   last_login_time?: string;
   is_admin?: boolean;
@@ -103,7 +99,6 @@ export interface AdminUserResponse {
   warning_count: number;
   suspension_count: number;
   rapid_session_count: number;
-  security_token: string;
   created_at: string;
   last_login_time?: string;
   risk_score: number;
@@ -144,7 +139,6 @@ export interface GroupFileResponse {
   content_type: string;
   shared_by_email: string;
   shared_at: string;
-  access_token: string;
 }
 
 export interface InboxItem {
@@ -208,7 +202,7 @@ async function apiFetch<T>(
       const json = await res.json();
       detail = json.detail || detail;
     } catch {}
-    const err = new Error(detail) as Error & { status: number };
+    const err = new Error(`[HTTP ${res.status}] ${detail}`) as Error & { status: number };
     err.status = res.status;
     throw err;
   }
@@ -340,6 +334,8 @@ export const api = {
       apiFetch<GroupMemberResponse[]>(`/groups/${groupId}/members`),
     getFiles: (groupId: string) =>
       apiFetch<GroupFileResponse[]>(`/groups/${groupId}/files`),
+    deleteFile: (groupId: string, shareId: string) =>
+      apiFetch(`/groups/${groupId}/files/${shareId}`, { method: "DELETE" }),
   },
 
   inbox: {

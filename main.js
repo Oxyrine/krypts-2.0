@@ -5,6 +5,23 @@ const http = require("http");
 const fs = require("fs");
 const url = require("url");
 const { spawn, execSync } = require("child_process");
+const dotenv = require("dotenv");
+
+// ─── Load secrets from backend/.env (never hardcode them here) ───────────────
+function loadBackendSecrets() {
+  const envPath = path.join(__dirname, "backend", ".env");
+  if (fs.existsSync(envPath)) {
+    const parsed = dotenv.parse(fs.readFileSync(envPath));
+    return {
+      JWT_SECRET_KEY: parsed.JWT_SECRET_KEY || "",
+      CONTENT_TOKEN_SECRET: parsed.CONTENT_TOKEN_SECRET || parsed.JWT_SECRET_KEY || "",
+      MASTER_KEK: parsed.MASTER_KEK || "",
+      ADMIN_EMAIL: parsed.ADMIN_EMAIL || "admin@example.com",
+    };
+  }
+  console.error("[SECURITY] backend/.env not found — backend secrets not loaded!");
+  return {};
+}
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 const DEV_MODE = false; // FORCE PROD MODE FOR DEBUGGING
@@ -50,6 +67,8 @@ function startBackendServer() {
     ? path.join(process.resourcesPath, "backend-server.exe")
     : path.join(__dirname, "backend", "backend-server.exe");
 
+  const secrets = loadBackendSecrets();
+
   console.log("Starting backend at:", backendPath);
   
   if (!fs.existsSync(backendPath)) {
@@ -79,14 +98,14 @@ function startBackendServer() {
         ...process.env,
         DATABASE_URL: dbUrl,
         LOCAL_VAULT_PATH: path.join(userDataPath, "local_vault"),
-        JWT_SECRET_KEY: "krypts-super-secret-jwt-key-change-in-prod-2024",
+        // Secrets loaded from backend/.env — NOT hardcoded
+        ...secrets,
         JWT_ALGORITHM: "HS256",
         ACCESS_TOKEN_EXPIRE_MINUTES: "60",
-        MASTER_KEK: "krypts-master-kek-32bytes-change!!",
-        ADMIN_EMAIL: "admin@example.com",
         RAPID_SESSION_THRESHOLD_SECONDS: "120",
         RATE_LIMIT_REQUESTS: "60",
         RATE_LIMIT_WINDOW_SECONDS: "60",
+        KRYPTS_ENV: "production",
       },
       stdio: ["ignore", logStream, logStream]
     });
@@ -139,7 +158,6 @@ function startLocalServer() {
       fs.stat(filePath, (err, stats) => {
         if (err || !stats.isFile()) {
            console.log("404 Not Found:", filePath);
-           // For 404s, Next.js static export generates a 404.html
            filePath = path.join(__dirname, "out", "404.html");
            fs.stat(filePath, (err404, stats404) => {
              if (err404 || !stats404.isFile()) {
@@ -151,6 +169,14 @@ function startLocalServer() {
              fs.createReadStream(filePath).pipe(res);
            });
            return;
+        }
+        // Path traversal guard: ensure resolved path is within the out/ directory
+        const outDir = path.resolve(__dirname, "out");
+        const resolved = path.resolve(filePath);
+        if (!resolved.startsWith(outDir + path.sep) && resolved !== outDir) {
+          res.writeHead(403);
+          res.end("Forbidden");
+          return;
         }
         res.writeHead(200, { "Content-Type": mimeTypes[ext] || "application/octet-stream" });
         fs.createReadStream(filePath).pipe(res);
@@ -166,6 +192,9 @@ function startLocalServer() {
   });
 }
 
+// Deep-link allowed paths
+const _ALLOWED_DEEP_LINK_PATHS = ["/view/image", "/view/pdf", "/view/video", "/dashboard", "/"];
+
 // ─── Deep Link URL → Next.js path converter ──────────────────────────────────
 // Converts: krypts://view/image?file_id=xxx&token=yyy
 //       to: http://127.0.0.1:<port>/view/image?file_id=xxx&token=yyy
@@ -173,7 +202,15 @@ function kryptsUrlToLocal(rawUrl) {
   const baseUrl = DEV_MODE ? DEV_URL : PROD_URL;
   try {
     const parsed = new URL(rawUrl); // e.g. krypts://view/image?file_id=...&token=...
-    const pathname = `/${parsed.host}${parsed.pathname}`.replace(/\/+/g, "/"); // view/image
+    const pathname = `/${parsed.host}${parsed.pathname}`.replace(/\/+/g, "/"); // /view/image
+    // Validate against allowlist to prevent path traversal via deep links
+    const isAllowed = _ALLOWED_DEEP_LINK_PATHS.some(
+      (allowed) => pathname === allowed || pathname.startsWith(allowed + "/")
+    );
+    if (!isAllowed) {
+      console.warn("[deep-link] Rejected disallowed path:", pathname);
+      return baseUrl;
+    }
     const search = parsed.search; // ?file_id=...&token=...
     return `${baseUrl}${pathname}${search}`;
   } catch {
@@ -220,12 +257,14 @@ function createWindow(deepLinkUrl) {
       preload: path.join(__dirname, "electron-preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: true,
       devTools: false,
     },
   });
 
   // ─── CORE PROTECTION: Block all screenshot / screen-recording tools ───────
   mainWindow.setMenuBarVisibility(false);
+  mainWindow.setContentProtection(true);  // Prevent screen capture of main window
 
   // ─── Load the app (or deep link target directly) ──────────────────────────
   if (deepLinkUrl) {
@@ -337,6 +376,26 @@ if (!gotTheLock) {
 
     session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
       callback({ requestHeaders: details.requestHeaders });
+    });
+
+    // Content-Security-Policy: restrict script execution and network requests
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          "Content-Security-Policy": [
+            "default-src 'self'; " +
+            "script-src 'self' 'unsafe-inline'; " +   // unsafe-inline needed for Next.js inline scripts
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+            "font-src 'self' https://fonts.gstatic.com; " +
+            "connect-src 'self' http://127.0.0.1:8000 http://127.0.0.1:*; " +
+            "img-src 'self' data: blob:; " +
+            "media-src 'self' http://127.0.0.1:8000 http://127.0.0.1:* blob:; " +
+            "frame-src 'none'; " +
+            "object-src 'none';"
+          ],
+        },
+      });
     });
 
     app.on("activate", () => {
