@@ -12,7 +12,7 @@ from app.middleware.auth import get_current_user, create_content_access_token
 from app.models.user import User
 from app.models.protected_file import ProtectedFile
 from app.models.file_share import FileShare
-from app.models.groups import GroupMember
+from app.models.groups import Group, GroupMember
 
 router = APIRouter()
 
@@ -69,6 +69,23 @@ async def share_file(
 
     if not target_user_id and not req.target_group_id:
         raise HTTPException(status_code=400, detail="Must provide target_email or target_group_id")
+
+    if req.target_group_id:
+        g_stmt = select(Group).where(Group.group_id == req.target_group_id)
+        g_result = await db.execute(g_stmt)
+        group = g_result.scalar_one_or_none()
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+
+        m_stmt = select(GroupMember).where(
+            GroupMember.group_id == req.target_group_id,
+            GroupMember.user_id == current_user.user_id,
+        )
+        m_result = await db.execute(m_stmt)
+        is_member = m_result.scalar_one_or_none() is not None
+
+        if group.owner_id != current_user.user_id and not is_member:
+            raise HTTPException(status_code=403, detail="Not authorized to share to this group")
 
     # Create share record
     share = FileShare(
