@@ -193,7 +193,7 @@ from pydantic import BaseModel
 
 class TelemetryEvent(BaseModel):
     event_type: str
-    metadata: dict = {}
+    data: dict = {}
 
 @router.post("/telemetry", response_model=dict)
 async def submit_telemetry(
@@ -231,7 +231,7 @@ async def submit_telemetry(
                 user_id=user.user_id,
                 alert_type=AlertType.banned,
                 description=f"Auto-banned due to high risk score ({user.risk_score}): {event.event_type}",
-                ip_address=event.metadata.get("ip_address", "unknown")
+                ip_address=event.data.get("ip_address", "unknown")
             )
             db.add(alert)
 
