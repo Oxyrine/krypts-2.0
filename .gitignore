@@ -33,3 +33,9 @@ fix_ticks*.mjs
 # Local dev database / vault
 *.db
 local_vault/
+
+# Python
+__pycache__/
+*.pyc
+build/
+venv/
