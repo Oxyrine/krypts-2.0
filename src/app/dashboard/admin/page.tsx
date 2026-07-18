@@ -39,7 +39,7 @@ export default function AdminPage() {
   const { user } = useAuth()
   const router = useRouter()
   
-  if (user && user.email !== "admin@example.com") {
+  if (user && !user.is_admin) {
     router.push("/dashboard")
     return null
   }
