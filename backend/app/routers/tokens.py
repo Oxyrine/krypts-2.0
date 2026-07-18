@@ -10,8 +10,9 @@ from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
-from app.middleware.auth import create_content_access_token, decode_token, get_current_user
+from app.middleware.auth import create_content_access_token, decode_content_token, get_current_user
 from app.models.protected_file import ProtectedFile
 from app.schemas import (
     GenerateTokenRequest,
@@ -23,6 +24,7 @@ from app.schemas import (
 router = APIRouter()
 
 _EXPIRY_RE = re.compile(r"^(\d+)(m|h|d)$")
+_MAX_EXPIRY_DAYS = settings.max_content_token_days
 
 
 def _parse_expiry(expires_in: str) -> timedelta:
@@ -31,11 +33,17 @@ def _parse_expiry(expires_in: str) -> timedelta:
         raise HTTPException(status_code=400, detail="Invalid expires_in format. Use e.g. '30m', '2h', '7d'.")
     amount, unit = int(m.group(1)), m.group(2)
     if unit == "m":
-        return timedelta(minutes=amount)
+        delta = timedelta(minutes=amount)
     elif unit == "h":
-        return timedelta(hours=amount)
+        delta = timedelta(hours=amount)
     else:
-        return timedelta(days=amount)
+        delta = timedelta(days=amount)
+
+    # Cap at maximum allowed lifetime
+    max_delta = timedelta(days=_MAX_EXPIRY_DAYS)
+    if delta > max_delta:
+        delta = max_delta
+    return delta
 
 
 # ---------------------------------------------------------------------------
@@ -88,13 +96,17 @@ async def generate_token(
 
 
 # ---------------------------------------------------------------------------
-# POST /validate-token
+# POST /validate-token  (requires authentication to prevent token enumeration)
 # ---------------------------------------------------------------------------
 
 @router.post("/validate-token", response_model=ValidateTokenResponse)
-async def validate_token(body: ValidateTokenRequest, request: Request):
+async def validate_token(
+    body: ValidateTokenRequest,
+    request: Request,
+    current_user=Depends(get_current_user),   # F-26: require auth
+):
     try:
-        payload = decode_token(body.token)
+        payload = decode_content_token(body.token)
         if payload.get("type") != "content_access":
             return ValidateTokenResponse(valid=False, message="Not a content access token.")
 
@@ -113,9 +125,9 @@ async def validate_token(body: ValidateTokenRequest, request: Request):
         return ValidateTokenResponse(
             valid=True,
             file_id=payload.get("file_id"),
-            user_id=payload.get("user_id"),
+            # user_id intentionally NOT returned (prevents UUID enumeration)
             expires_at=exp_dt,
             permissions=payload.get("permissions"),
         )
-    except JWTError as e:
-        return ValidateTokenResponse(valid=False, message=f"Invalid token: {e}")
+    except JWTError:
+        return ValidateTokenResponse(valid=False, message="Invalid or expired token.")

@@ -2,7 +2,8 @@
 Analytics routes: usage statistics and security event history.
 """
 import asyncio
-from datetime import datetime, timezone
+from typing import List, Dict, Any
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -25,33 +26,50 @@ async def usage_analytics(
 ):
     uid = current_user.user_id
 
-    files_q = db.execute(
+    files_r = await db.execute(
         select(func.count(ProtectedFile.file_id)).where(ProtectedFile.owner_id == uid)
     )
-    bw_q = db.execute(
+    bw_r = await db.execute(
         select(func.sum(ProtectedFile.size_bytes)).where(ProtectedFile.owner_id == uid)
     )
-    events_q = db.execute(
+    events_r = await db.execute(
         select(func.count(UserActivityLog.log_id)).where(
             UserActivityLog.user_id == uid,
             UserActivityLog.event_type == EventType.login,
         )
     )
-    failed_q = db.execute(
+    failed_r = await db.execute(
         select(func.count(UserActivityLog.log_id)).where(
             UserActivityLog.user_id == uid,
             UserActivityLog.event_type == EventType.failure,
         )
     )
-    recent_q = db.execute(
+    recent_r = await db.execute(
         select(UserActivityLog)
         .where(UserActivityLog.user_id == uid)
         .order_by(UserActivityLog.timestamp.desc())
         .limit(10)
     )
 
-    files_r, bw_r, events_r, failed_r, recent_r = await asyncio.gather(
-        files_q, bw_q, events_q, failed_q, recent_q
+    seven_days_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
+    logs_r = await db.execute(
+        select(UserActivityLog)
+        .where(
+            UserActivityLog.user_id == uid,
+            UserActivityLog.timestamp >= seven_days_ago
+        )
+    )
+    types_r = await db.execute(
+        select(ProtectedFile.content_type, func.count(ProtectedFile.file_id))
+        .where(ProtectedFile.owner_id == uid)
+        .group_by(ProtectedFile.content_type)
+    )
+    ips_r = await db.execute(
+        select(UserActivityLog.ip_address, func.count(UserActivityLog.log_id))
+        .where(UserActivityLog.user_id == uid, UserActivityLog.ip_address.isnot(None))
+        .group_by(UserActivityLog.ip_address)
+        .order_by(func.count(UserActivityLog.log_id).desc())
+        .limit(5)
     )
 
     total_files = files_r.scalar() or 0
@@ -71,6 +89,66 @@ async def usage_analytics(
         for log in recent_logs
     ]
 
+    # Calculate auth_data for last 7 days
+    today = datetime.now(timezone.utc)
+    days_dict = {}
+    for i in range(6, -1, -1):
+        d = today - timedelta(days=i)
+        day_name = d.strftime("%a")
+        date_str = d.strftime("%Y-%m-%d")
+        days_dict[date_str] = {
+            "name": day_name,
+            "sessions": 0,
+            "blocked": 0
+        }
+
+    all_logs = logs_r.scalars().all()
+    for log in all_logs:
+        log_date = log.timestamp.strftime("%Y-%m-%d")
+        if log_date in days_dict:
+            if log.event_type == EventType.login:
+                days_dict[log_date]["sessions"] += 1
+            elif log.event_type == EventType.failure:
+                days_dict[log_date]["blocked"] += 1
+
+    auth_data = [days_dict[d] for d in sorted(days_dict.keys())]
+
+    # Calculate content_data
+    files_types = types_r.all()
+    type_map = {
+        "video": {"name": "Video", "color": "#ec4899"},
+        "pdf": {"name": "PDF", "color": "#3b82f6"},
+        "image": {"name": "Image", "color": "#10b981"}
+    }
+
+    content_data = []
+    total_val = sum(item[1] for item in files_types)
+    for f_type, count in files_types:
+        f_type_lower = (f_type or "image").lower()
+        if "video" in f_type_lower:
+            cat = "video"
+        elif "pdf" in f_type_lower:
+            cat = "pdf"
+        else:
+            cat = "image"
+
+        cfg = type_map[cat]
+        percentage = round((count / total_val) * 100) if total_val > 0 else 0
+
+        existing = next((x for x in content_data if x["name"] == cfg["name"]), None)
+        if existing:
+            existing["value"] += percentage
+        else:
+            content_data.append({
+                "name": cfg["name"],
+                "value": percentage,
+                "color": cfg["color"]
+            })
+
+    # Calculate geo_data (IP addresses)
+    ip_counts = ips_r.all()
+    geo_data = [{"name": item[0] if item[0] else "Unknown", "value": item[1]} for item in ip_counts]
+
     return UsageAnalytics(
         total_files=total_files,
         total_tokens_issued=total_access_events,
@@ -78,6 +156,9 @@ async def usage_analytics(
         blocked_attempts=blocked_attempts,
         bandwidth_saved_mb=bandwidth_saved_mb,
         recent_events=recent_events,
+        auth_data=auth_data,
+        content_data=content_data,
+        geo_data=geo_data
     )
 
 
@@ -106,3 +187,54 @@ async def security_events(
         )
         for a in alerts
     ]
+
+
+from pydantic import BaseModel
+
+class TelemetryEvent(BaseModel):
+    event_type: str
+    metadata: dict = {}
+
+@router.post("/telemetry", response_model=dict)
+async def submit_telemetry(
+    event: TelemetryEvent,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.user import User, AccountStatus
+    from app.models.security_alert import SecurityAlert, AlertType
+
+    result = await db.execute(select(User).where(User.user_id == current_user.user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return {"status": "error", "detail": "User not found"}
+
+    score_increment = 0
+    alert_threshold = 80
+
+    if event.event_type == "rapid_scrubbing":
+        score_increment = 10
+    elif event.event_type == "copy_attempt":
+        score_increment = 20
+    elif event.event_type == "dev_tools_opened":
+        score_increment = 50
+
+    if score_increment > 0:
+        user.risk_score += score_increment
+
+        # If threshold crossed, auto-ban
+        if user.risk_score >= alert_threshold and user.account_status != AccountStatus.banned:
+            user.account_status = AccountStatus.banned
+
+            alert = SecurityAlert(
+                user_id=user.user_id,
+                alert_type=AlertType.banned,
+                description=f"Auto-banned due to high risk score ({user.risk_score}): {event.event_type}",
+                ip_address=event.metadata.get("ip_address", "unknown")
+            )
+            db.add(alert)
+
+        await db.commit()
+
+    return {"status": "ok", "new_score": user.risk_score, "banned": user.account_status == AccountStatus.banned}

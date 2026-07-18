@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.protected_file import ProtectedFile
@@ -46,6 +47,13 @@ async def upload_file(
     if not data:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
+    # Enforce maximum upload size
+    if len(data) > settings.max_upload_size_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum allowed size is {settings.max_upload_size_bytes // (1024*1024)} MB."
+        )
+
     file_id = uuid.uuid4()
     filename = file.filename or f"file_{file_id}"
     file_type = _detect_file_type(filename)
@@ -61,8 +69,8 @@ async def upload_file(
 
     try:
         upload_encrypted_file(storage_key, ciphertext)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Storage error: {e}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Storage error: failed to store file.")
 
     protected = ProtectedFile(
         file_id=file_id,
@@ -147,8 +155,10 @@ async def delete_protected_file(
 
     try:
         delete_file(pf.s3_key)
-    except Exception:
-        pass  # Best-effort storage deletion
+    except Exception as e:
+        # Best-effort storage deletion — log failure but continue
+        import logging
+        logging.getLogger(__name__).warning("Storage deletion failed for key %s: %s", pf.s3_key, e)
 
     await db.delete(pf)
     await db.commit()

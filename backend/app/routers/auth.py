@@ -1,5 +1,5 @@
 """
-Authentication routes: signup, login (with rapid-session detection), logout, /me.
+Authentication routes: signup, login (with rapid-session detection + brute-force lockout), logout, /me.
 """
 import secrets
 import uuid
@@ -27,12 +27,57 @@ router = APIRouter()
 
 _redis: aioredis.Redis | None = None
 
+# Max failed login attempts before temporary lockout
+_MAX_FAILED_ATTEMPTS = 10
+_LOCKOUT_KEY_PREFIX = "login_lockout:"
+_FAIL_COUNT_KEY_PREFIX = "login_fails:"
+
 
 def _get_redis() -> aioredis.Redis:
     global _redis
     if _redis is None:
         _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     return _redis
+
+
+async def _check_brute_force(email: str):
+    """Raise 429 if this email has exceeded the failed login threshold."""
+    try:
+        r = _get_redis()
+        lockout_key = f"{_LOCKOUT_KEY_PREFIX}{email}"
+        if await r.exists(lockout_key):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed login attempts. Try again in 15 minutes.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Redis unavailable — degrade gracefully
+
+
+async def _record_failed_attempt(email: str):
+    """Increment failed attempt counter; lock out after threshold."""
+    try:
+        r = _get_redis()
+        fail_key = f"{_FAIL_COUNT_KEY_PREFIX}{email}"
+        count = await r.incr(fail_key)
+        await r.expire(fail_key, 900)  # 15-minute window
+        if count >= _MAX_FAILED_ATTEMPTS:
+            lockout_key = f"{_LOCKOUT_KEY_PREFIX}{email}"
+            await r.setex(lockout_key, 900, "1")  # 15-minute lockout
+    except Exception:
+        pass  # Redis unavailable — degrade gracefully
+
+
+async def _clear_failed_attempts(email: str):
+    """Clear failed attempt counter on successful login."""
+    try:
+        r = _get_redis()
+        await r.delete(f"{_FAIL_COUNT_KEY_PREFIX}{email}")
+        await r.delete(f"{_LOCKOUT_KEY_PREFIX}{email}")
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +104,7 @@ async def signup(body: SignupRequest, request: Request, db: AsyncSession = Depen
     # Log signup event
     log = UserActivityLog(
         user_id=user.user_id,
-        event_type=EventType.login,
+        event_type=EventType.signup,
         ip_address=request.client.host if request.client else None,
         device_info=request.headers.get("user-agent"),
         session_id=secrets.token_hex(16),
@@ -78,11 +123,15 @@ async def signup(body: SignupRequest, request: Request, db: AsyncSession = Depen
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    # Brute-force protection
+    await _check_brute_force(body.email)
+
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(body.password, user.password_hash):
-        # Log failed attempt
+        await _record_failed_attempt(body.email)
+        # Log failed attempt (only if user exists, to avoid leaking email validity)
         if user:
             log = UserActivityLog(
                 user_id=user.user_id,
@@ -99,11 +148,17 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     if user.account_status == AccountStatus.suspended:
         raise HTTPException(status_code=403, detail="Account temporarily suspended.")
 
-    # --- Rapid session detection (DB Fallback for Local Testing) ---
+    # Clear brute-force counters on successful login
+    await _clear_failed_attempts(body.email)
+
+    # --- Rapid session detection ---
     now_utc = datetime.now(timezone.utc)
     if user.last_login_time is not None:
-        elapsed = (now_utc - user.last_login_time).total_seconds()
-        
+        last_login = user.last_login_time
+        if last_login.tzinfo is None:
+            last_login = last_login.replace(tzinfo=timezone.utc)
+        elapsed = (now_utc - last_login).total_seconds()
+
         if elapsed < settings.rapid_session_threshold_seconds:
             user.rapid_session_count += 1
 
@@ -139,7 +194,6 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
                 )
                 db.add(alert)
         else:
-            # If they waited long enough, reset the counter
             user.rapid_session_count = 0
 
     # Check again after possible status change
@@ -152,7 +206,10 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
         await db.commit()
         raise HTTPException(status_code=403, detail="Account suspended due to suspicious activity.")
 
-    # Update last login time
+    # Rehash password with bcrypt if it was stored as legacy SHA-256
+    if ":" in user.password_hash and len(user.password_hash) == 97:
+        user.password_hash = hash_password(body.password)
+
     user.last_login_time = datetime.now(timezone.utc)
 
     session_id = secrets.token_hex(16)

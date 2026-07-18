@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
-from app.middleware.auth import decode_token
+from app.middleware.auth import decode_content_token
 from app.models.protected_file import ProtectedFile
 from app.utils.encryption import decrypt_dek, decrypt_file_bytes
 from app.utils.storage import download_encrypted_file
@@ -25,10 +25,18 @@ router = APIRouter()
 CHUNK_SIZE = 65536  # 64 KB
 
 
+def _safe_filename(filename: str) -> str:
+    """Sanitize a filename for use in Content-Disposition headers."""
+    import urllib.parse
+    # Keep only safe characters; URL-encode the rest
+    safe = filename.replace('"', "'").replace('\\', '_').replace('\n', '').replace('\r', '')
+    return safe[:255]  # Limit length
+
+
 def _validate_content_token(token: str, file_id: str, client_ip: str) -> dict:
     """Validate a content access token and return its payload."""
     try:
-        payload = decode_token(token)
+        payload = decode_content_token(token)
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired content token.")
 
@@ -86,7 +94,7 @@ async def stream_video(file_id: str, token: str, request: Request):
 
     headers = {
         "Cache-Control": "no-store, no-cache, must-revalidate",
-        "Content-Disposition": f'inline; filename="{pf.filename}"',
+        "Content-Disposition": f'inline; filename="{_safe_filename(pf.filename)}"',
         "Content-Length": str(len(plaintext)),
         "X-Content-Type-Options": "nosniff",
     }
@@ -118,8 +126,8 @@ async def get_pdf_page(file_id: str, page: int, token: str, request: Request):
 
     try:
         page_bytes = watermark_pdf_page(plaintext, page, watermark_text)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF rendering error: {e}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="PDF rendering failed.")
 
     return Response(
         content=page_bytes,
@@ -149,8 +157,8 @@ async def get_image(file_id: str, token: str, request: Request):
 
     try:
         watermarked = watermark_image(plaintext, watermark_text, opacity=0.2)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Image watermarking error: {e}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Image processing failed.")
 
     return Response(
         content=watermarked,
@@ -197,8 +205,7 @@ async def download_file(file_id: str, token: str, request: Request):
         content=plaintext,
         media_type=media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{pf.filename}"',
+            "Content-Disposition": f'attachment; filename="{_safe_filename(pf.filename)}"',
             "X-Content-Type-Options": "nosniff",
         },
     )
-

@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -18,6 +18,13 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     full_name: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long.")
+        return v
 
 
 class LoginRequest(BaseModel):
@@ -37,26 +44,22 @@ class UserResponse(BaseModel):
     email: str
     full_name: Optional[str] = None
     account_status: str
-    warning_count: int
-    suspension_count: int
-    rapid_session_count: int
-    security_token: str
+    # NOTE: Internal security counters intentionally NOT exposed to clients.
     created_at: datetime
     last_login_time: Optional[datetime] = None
+    is_admin: bool = False
 
     @classmethod
     def from_user(cls, user) -> "UserResponse":
+        from app.config import settings
         return cls(
             id=user.user_id,
             email=user.email,
             full_name=user.full_name,
             account_status=user.account_status.value,
-            warning_count=user.warning_count,
-            suspension_count=user.suspension_count,
-            rapid_session_count=user.rapid_session_count,
-            security_token=user.security_token,
             created_at=user.created_at,
             last_login_time=user.last_login_time,
+            is_admin=(user.email == settings.admin_email),
         )
 
 
@@ -110,7 +113,7 @@ class ValidateTokenRequest(BaseModel):
 class ValidateTokenResponse(BaseModel):
     valid: bool
     file_id: Optional[str] = None
-    user_id: Optional[str] = None
+    # user_id intentionally NOT returned to prevent UUID enumeration
     expires_at: Optional[datetime] = None
     permissions: Optional[Dict[str, Any]] = None
     message: str = "ok"
@@ -147,6 +150,9 @@ class UsageAnalytics(BaseModel):
     blocked_attempts: int = 0
     bandwidth_saved_mb: float = 0.0
     recent_events: List[Dict[str, Any]] = []
+    auth_data: List[Dict[str, Any]] = []
+    content_data: List[Dict[str, Any]] = []
+    geo_data: List[Dict[str, Any]] = []
 
 
 class SecurityEventItem(BaseModel):
@@ -172,7 +178,8 @@ class AdminUserResponse(BaseModel):
     warning_count: int
     suspension_count: int
     rapid_session_count: int
-    security_token: str
+    risk_score: int
+    # NOTE: security_token intentionally NOT included — it's an internal field.
     created_at: datetime
     last_login_time: Optional[datetime]
 
@@ -186,7 +193,7 @@ class AdminUserResponse(BaseModel):
             warning_count=user.warning_count,
             suspension_count=user.suspension_count,
             rapid_session_count=user.rapid_session_count,
-            security_token=user.security_token,
+            risk_score=user.risk_score,
             created_at=user.created_at,
             last_login_time=user.last_login_time,
         )

@@ -96,6 +96,12 @@ async def ban_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
+    # Prevent self-ban or banning another admin
+    if str(user.user_id) == str(current_user.user_id):
+        raise HTTPException(status_code=400, detail="Cannot ban your own account.")
+    if user.email == settings.admin_email:
+        raise HTTPException(status_code=400, detail="Cannot ban the admin account.")
+
     user.account_status = AccountStatus.banned
     await db.commit()
     return UserActionResponse(message="User banned.", user_id=user_id, new_status="banned")
@@ -116,6 +122,12 @@ async def suspend_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
+
+    # Prevent self-suspend or suspending another admin
+    if str(user.user_id) == str(current_user.user_id):
+        raise HTTPException(status_code=400, detail="Cannot suspend your own account.")
+    if user.email == settings.admin_email:
+        raise HTTPException(status_code=400, detail="Cannot suspend the admin account.")
 
     user.account_status = AccountStatus.suspended
     user.suspension_count += 1
@@ -141,6 +153,7 @@ async def reactivate_user(
 
     user.account_status = AccountStatus.active
     user.rapid_session_count = 0
+    user.risk_score = 0
     await db.commit()
     return UserActionResponse(message="User reactivated.", user_id=user_id, new_status="active")
 
