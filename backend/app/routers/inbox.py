@@ -1,7 +1,6 @@
 import uuid
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
-from jose import jwt
 
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,8 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.config import settings
-from app.middleware.auth import get_current_user
+from app.middleware.auth import get_current_user, create_content_access_token
 from app.models.user import User
 from app.models.protected_file import ProtectedFile
 from app.models.file_share import FileShare
@@ -36,15 +34,15 @@ class InboxItem(BaseModel):
     access_token: str
 
 
-def generate_short_lived_token(file_id: uuid.UUID, user_email: str) -> str:
-    payload = {
+def generate_short_lived_token(file_id: uuid.UUID, user_email: str, user_id: uuid.UUID) -> str:
+    claims = {
         "sub": user_email,
         "file_id": str(file_id),
-        "type": "content_access",
+        "user_id": str(user_id),
         "exp": datetime.now(timezone.utc) + timedelta(hours=24),  # 24-hour token
         "permissions": {"stream": True, "download": False}
     }
-    return jwt.encode(payload, settings.get_content_token_secret(), algorithm="HS256")
+    return create_content_access_token(claims)
 
 
 @router.post("/share")
@@ -126,7 +124,7 @@ async def get_inbox(
             continue
         seen_shares.add(share.share_id)
 
-        token = generate_short_lived_token(file.file_id, current_user.email)
+        token = generate_short_lived_token(file.file_id, current_user.email, current_user.user_id)
 
         response_items.append({
             "share_id": share.share_id,
