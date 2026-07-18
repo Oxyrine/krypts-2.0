@@ -14,7 +14,9 @@ from botocore.exceptions import ClientError
 
 from app.config import settings
 
-LOCAL_VAULT = Path(__file__).parent.parent.parent / "local_vault"
+import os
+
+LOCAL_VAULT = Path(os.environ.get("LOCAL_VAULT_PATH", Path(__file__).parent.parent.parent / "local_vault"))
 
 
 def _check_s3_available() -> bool:
