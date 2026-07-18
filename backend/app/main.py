@@ -101,3 +101,14 @@ app.include_router(invites.router, prefix="/invites", tags=["Invites"])
 @app.get("/health", tags=["System"])
 async def health():
     return {"status": "healthy", "version": "1.0.0"}
+
+
+# ---------------------------------------------------------------------------
+# Standalone entry point (PyInstaller-packaged backend-server.exe runs this
+# module directly rather than via `uvicorn app.main:app`)
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
