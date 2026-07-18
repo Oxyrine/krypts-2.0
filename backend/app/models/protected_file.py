@@ -25,9 +25,9 @@ class ProtectedFile(Base):
     # S3 object key for the encrypted file
     s3_key: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
     # Encrypted DEK (base64 AES-256-CBC wrapped with master KEK)
-    encryption_key_ref: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    encryption_key_ref: Mapped[str] = mapped_column(String(1024), nullable=True)
     # AES-CBC initialization vector (base64)
-    iv: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    iv: Mapped[str] = mapped_column(String(64), nullable=True)
 
     # DRM flags
     allow_download: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

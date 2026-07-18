@@ -41,7 +41,7 @@ class SecurityAlert(Base):
     )
 
     # Extra context fields stored directly for quick admin access
-    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    ip_address: Mapped[str] = mapped_column(String(45), nullable=True)
 
     # Relationship
     user: Mapped["User"] = relationship("User", back_populates="security_alerts")

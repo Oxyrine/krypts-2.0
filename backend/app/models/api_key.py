@@ -21,16 +21,16 @@ class ApiKey(Base):
     # Store the hashed key; raw key is shown only once on creation
     key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(10), nullable=False)   # first 8 chars for display
-    label: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    scopes: Mapped[str | None] = mapped_column(Text, nullable=True)        # comma-separated scopes
+    label: Mapped[str] = mapped_column(String(128), nullable=True)
+    scopes: Mapped[str] = mapped_column(Text, nullable=True)        # comma-separated scopes
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationship
     user: Mapped["User"] = relationship("User", back_populates="api_keys")
