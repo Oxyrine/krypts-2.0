@@ -1,8 +1,7 @@
 """
-Authentication utilities: password hashing, JWT creation/validation,
+Authentication utilities: password hashing (bcrypt), JWT creation/validation,
 and FastAPI dependency for extracting the current authenticated user.
 """
-import hashlib
 import secrets
 import uuid as _uuid
 from datetime import datetime, timedelta, timezone
@@ -11,6 +10,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,24 +19,34 @@ from app.database import get_db
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# ---------------------------------------------------------------------------
+# Password hashing — bcrypt via passlib (intentionally slow, salted)
+# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Password hashing (salted SHA-256)
-# ---------------------------------------------------------------------------
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 def hash_password(password: str) -> str:
-    """Return 'salt:sha256(salt+password)' hex string."""
-    salt = secrets.token_hex(16)
-    digest = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
-    return f"{salt}:{digest}"
+    """Return a bcrypt hash of the given password."""
+    return _pwd_context.hash(password)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """Verify a plain password against a stored hash."""
+    """Verify a plain password against a bcrypt hash.
+    Also handles legacy SHA-256 hashes ('salt:hexdigest') for migration.
+    """
+    # Legacy SHA-256 path — migrate on first successful verify
+    if ":" in hashed and len(hashed) == 97:
+        import hashlib
+        try:
+            salt, stored_digest = hashed.split(":", 1)
+            digest = hashlib.sha256(f"{salt}{plain}".encode()).hexdigest()
+            return secrets.compare_digest(digest, stored_digest)
+        except Exception:
+            return False
+    # bcrypt path
     try:
-        salt, stored_digest = hashed.split(":", 1)
-        digest = hashlib.sha256(f"{salt}{plain}".encode()).hexdigest()
-        return secrets.compare_digest(digest, stored_digest)
+        return _pwd_context.verify(plain, hashed)
     except Exception:
         return False
 
@@ -55,15 +65,22 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def create_content_access_token(claims: dict) -> str:
-    """Create a short-lived token specifically for content access."""
+    """Create a short-lived token specifically for content access.
+    Signed with CONTENT_TOKEN_SECRET (separate from user access tokens).
+    """
     payload = claims.copy()
     payload.update({"type": "content_access"})
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return jwt.encode(payload, settings.get_content_token_secret(), algorithm=settings.jwt_algorithm)
 
 
 def decode_token(token: str) -> dict:
-    """Decode and verify a JWT. Raises JWTError on failure."""
+    """Decode and verify a user access JWT. Raises JWTError on failure."""
     return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+
+
+def decode_content_token(token: str) -> dict:
+    """Decode and verify a content access JWT. Raises JWTError on failure."""
+    return jwt.decode(token, settings.get_content_token_secret(), algorithms=[settings.jwt_algorithm])
 
 
 # ---------------------------------------------------------------------------
