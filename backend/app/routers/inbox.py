@@ -12,6 +12,7 @@ from app.middleware.auth import get_current_user, create_content_access_token
 from app.models.user import User
 from app.models.protected_file import ProtectedFile
 from app.models.file_share import FileShare
+from app.models.file_key import FileKey
 from app.models.groups import Group, GroupMember
 
 router = APIRouter()
@@ -21,6 +22,7 @@ class ShareFileReq(BaseModel):
     file_id: uuid.UUID
     target_email: Optional[str] = None
     target_group_id: Optional[uuid.UUID] = None
+    wrapped_dek: Optional[str] = None  # required when sharing an E2EE file
 
 
 class InboxItem(BaseModel):
@@ -32,6 +34,7 @@ class InboxItem(BaseModel):
     shared_by_email: str
     shared_at: datetime
     access_token: str
+    is_e2ee: bool = False
 
 
 def generate_short_lived_token(file_id: uuid.UUID, user_email: str, user_id: uuid.UUID) -> str:
@@ -70,6 +73,12 @@ async def share_file(
     if not target_user_id and not req.target_group_id:
         raise HTTPException(status_code=400, detail="Must provide target_email or target_group_id")
 
+    if file.is_e2ee:
+        if req.target_group_id:
+            raise HTTPException(status_code=400, detail="E2EE files can't be group-shared yet.")
+        if not req.wrapped_dek:
+            raise HTTPException(status_code=400, detail="E2EE files require wrapped_dek when sharing.")
+
     if req.target_group_id:
         g_stmt = select(Group).where(Group.group_id == req.target_group_id)
         g_result = await db.execute(g_stmt)
@@ -95,6 +104,16 @@ async def share_file(
         target_group_id=req.target_group_id
     )
     db.add(share)
+
+    if file.is_e2ee:
+        # Recipient's own copy of the DEK, wrapped with their public key —
+        # the server just relays it, it never sees the DEK itself.
+        existing = await db.execute(
+            select(FileKey).where(FileKey.file_id == req.file_id, FileKey.user_id == target_user_id)
+        )
+        if not existing.scalar_one_or_none():
+            db.add(FileKey(file_id=req.file_id, user_id=target_user_id, wrapped_dek=req.wrapped_dek))
+
     await db.commit()
 
     return {"status": "success", "detail": "File shared successfully"}
@@ -151,7 +170,8 @@ async def get_inbox(
             "shared_by_name": sharer.full_name or sharer.email,
             "shared_by_email": sharer.email,
             "shared_at": share.created_at,
-            "access_token": token
+            "access_token": token,
+            "is_e2ee": file.is_e2ee,
         })
 
     # Sort descending by shared_at

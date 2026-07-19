@@ -67,6 +67,11 @@ async def _get_file_record(file_id: str) -> ProtectedFile:
 
 async def _decrypt_file(pf: ProtectedFile) -> bytes:
     """Download and decrypt a protected file."""
+    if pf.is_e2ee:
+        raise HTTPException(
+            status_code=409,
+            detail="This file is end-to-end encrypted; use /e2ee/blob and decrypt client-side.",
+        )
     if not pf.encryption_key_ref or not pf.iv:
         raise HTTPException(status_code=500, detail="File encryption metadata missing.")
 
@@ -153,10 +158,12 @@ async def get_image(file_id: str, token: str, request: Request):
     plaintext = await _decrypt_file(pf)
 
     user_id = payload.get("user_id", "unknown")
+    user_email = payload.get("sub", "")  # inbox share-tokens carry email in `sub`; owner tokens don't
     watermark_text = f"© Krypts • {user_id[:8]}..."
+    forensic_id = f"{user_email or user_id} | {user_id[:8]} | Krypts"
 
     try:
-        watermarked = watermark_image(plaintext, watermark_text, opacity=0.2)
+        watermarked = watermark_image(plaintext, watermark_text, opacity=0.2, invisible_text=forensic_id)
     except Exception:
         raise HTTPException(status_code=500, detail="Image processing failed.")
 

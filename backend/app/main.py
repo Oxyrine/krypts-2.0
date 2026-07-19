@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import init_db
 from app.middleware.rate_limiter import RateLimiterMiddleware
-from app.routers import admin, analytics, apikeys, auth, content, files, tokens, groups, inbox, invites
+from app.routers import admin, analytics, apikeys, auth, content, files, tokens, groups, inbox, invites, e2ee
 
 
 @asynccontextmanager
@@ -92,6 +92,7 @@ app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(groups.router, prefix="/groups", tags=["Groups"])
 app.include_router(inbox.router, prefix="/inbox", tags=["Inbox"])
 app.include_router(invites.router, prefix="/invites", tags=["Invites"])
+app.include_router(e2ee.router, prefix="/e2ee", tags=["End-to-End Encryption"])
 
 
 # ---------------------------------------------------------------------------

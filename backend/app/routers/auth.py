@@ -21,7 +21,14 @@ from app.middleware.auth import (
 from app.models.activity_log import EventType, UserActivityLog
 from app.models.security_alert import AlertStatus, AlertType, SecurityAlert
 from app.models.user import AccountStatus, User
-from app.schemas import LoginRequest, SignupRequest, TokenResponse, UserResponse
+from app.schemas import (
+    KeyBundleRequest,
+    KeyBundleResponse,
+    LoginRequest,
+    SignupRequest,
+    TokenResponse,
+    UserResponse,
+)
 
 router = APIRouter()
 
@@ -36,7 +43,16 @@ _FAIL_COUNT_KEY_PREFIX = "login_fails:"
 def _get_redis() -> aioredis.Redis:
     global _redis
     if _redis is None:
-        _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+        # Short connect/socket timeouts so brute-force tracking degrades
+        # gracefully (per the except-and-pass callers below) instead of
+        # letting every login hang for several seconds when Redis is
+        # unreachable. Mirrors middleware/rate_limiter.py's client config.
+        _redis = aioredis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=0.2,
+            socket_timeout=0.2,
+        )
     return _redis
 
 
@@ -91,12 +107,24 @@ async def signup(body: SignupRequest, request: Request, db: AsyncSession = Depen
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered.")
 
+    # E2EE key bundle is optional but must be provided as a complete set
+    has_partial_keys = any([body.public_key, body.encrypted_private_key, body.key_salt])
+    has_all_keys = all([body.public_key, body.encrypted_private_key, body.key_salt])
+    if has_partial_keys and not has_all_keys:
+        raise HTTPException(
+            status_code=400,
+            detail="public_key, encrypted_private_key, and key_salt must all be provided together.",
+        )
+
     user = User(
         user_id=uuid.uuid4(),
         email=body.email,
         full_name=body.full_name,
         password_hash=hash_password(body.password),
         security_token=secrets.token_hex(32),
+        public_key=body.public_key,
+        encrypted_private_key=body.encrypted_private_key,
+        key_salt=body.key_salt,
     )
     db.add(user)
     await db.flush()  # get user_id assigned
@@ -252,3 +280,43 @@ async def logout(request: Request, current_user=Depends(get_current_user), db: A
 @router.get("/me", response_model=UserResponse)
 async def me(current_user=Depends(get_current_user)):
     return UserResponse.from_user(current_user)
+
+
+# ---------------------------------------------------------------------------
+# GET /auth/keys, POST /auth/keys — E2EE key bundle (lazy provisioning for
+# accounts created before end-to-end encryption existed)
+# ---------------------------------------------------------------------------
+
+@router.get("/keys", response_model=KeyBundleResponse)
+async def get_keys(current_user=Depends(get_current_user)):
+    return KeyBundleResponse(
+        public_key=current_user.public_key,
+        encrypted_private_key=current_user.encrypted_private_key,
+        key_salt=current_user.key_salt,
+        has_keys=bool(current_user.public_key),
+    )
+
+
+@router.post("/keys", response_model=KeyBundleResponse)
+async def set_keys(
+    body: KeyBundleRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.public_key and not body.force:
+        raise HTTPException(
+            status_code=400,
+            detail="Key bundle already exists for this account. Pass force=true to overwrite.",
+        )
+
+    current_user.public_key = body.public_key
+    current_user.encrypted_private_key = body.encrypted_private_key
+    current_user.key_salt = body.key_salt
+    await db.commit()
+
+    return KeyBundleResponse(
+        public_key=body.public_key,
+        encrypted_private_key=body.encrypted_private_key,
+        key_salt=body.key_salt,
+        has_keys=True,
+    )

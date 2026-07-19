@@ -7,7 +7,6 @@ import {
   Activity, Settings, Shield, Bell, LogOut, ChevronDown, ShieldAlert, Inbox, Users, ScanSearch
 } from "lucide-react"
 
-import { ModeToggle } from "@/components/mode-toggle"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { AuthGuard } from "@/components/auth-guard"
@@ -130,9 +129,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Bell className="h-4 w-4" />
                 <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5 rounded-full bg-orangey" />
               </Link>
-
-              {/* Theme toggle */}
-              <ModeToggle />
 
               {/* User dropdown */}
               <DropdownMenu>

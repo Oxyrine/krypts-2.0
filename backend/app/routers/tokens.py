@@ -104,6 +104,7 @@ async def validate_token(
     body: ValidateTokenRequest,
     request: Request,
     current_user=Depends(get_current_user),   # F-26: require auth
+    db: AsyncSession = Depends(get_db),
 ):
     try:
         payload = decode_content_token(body.token)
@@ -122,12 +123,22 @@ async def validate_token(
             if client_ip != ip_restriction:
                 return ValidateTokenResponse(valid=False, message="IP address mismatch.")
 
+        is_e2ee = False
+        file_id = payload.get("file_id")
+        if file_id:
+            pf_result = await db.execute(
+                select(ProtectedFile).where(ProtectedFile.file_id == uuid.UUID(file_id))
+            )
+            pf = pf_result.scalar_one_or_none()
+            is_e2ee = bool(pf and pf.is_e2ee)
+
         return ValidateTokenResponse(
             valid=True,
-            file_id=payload.get("file_id"),
+            file_id=file_id,
             # user_id intentionally NOT returned (prevents UUID enumeration)
             expires_at=exp_dt,
             permissions=payload.get("permissions"),
+            is_e2ee=is_e2ee,
         )
     except JWTError:
         return ValidateTokenResponse(valid=False, message="Invalid or expired token.")

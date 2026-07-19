@@ -13,17 +13,79 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.colors import Color
 
 
+def embed_microdelta(img: Image.Image, text: str, delta: int = 3) -> Image.Image:
+    """Shift every pixel under the rendered text by exactly +/-delta RGB steps.
+    Invisible to the eye; recoverable via high-pass + contrast analysis.
+    `img` must already be in RGB mode.
+    """
+    width, height = img.size
+
+    # Text mask: black background, text drawn in white where the forensic
+    # identity string should be embedded.
+    mask = Image.new("L", (width, height), 0)
+    mask_draw = ImageDraw.Draw(mask)
+
+    try:
+        font = ImageFont.truetype("arial.ttf", size=max(14, width // 60))
+    except (IOError, OSError):
+        font = ImageFont.load_default()
+
+    bbox = mask_draw.textbbox((0, 0), text, font=font)
+    text_w = max(1, bbox[2] - bbox[0])
+    text_h = max(1, bbox[3] - bbox[1])
+
+    row_step = text_h + 8
+    col_step = text_w + 40
+
+    row_i = 0
+    for y in range(0, height, row_step):
+        # Brick-pattern offset on alternating rows so a vertical crop can't
+        # slip between two columns and miss every repetition.
+        x_offset = (text_w // 2) if (row_i % 2) else 0
+        for x in range(-col_step, width + col_step, col_step):
+            mask_draw.text((x + x_offset, y), text, font=font, fill=255)
+        row_i += 1
+
+    # PIL antialiases glyph edges, leaving intermediate mask values (not
+    # just 0/255) along strokes. Image.composite blends proportionally at
+    # those values, giving edge pixels a fractional shift instead of the
+    # full delta. Force the mask to hard binary so every covered pixel -
+    # edges included - gets the complete +/-delta shift.
+    mask = mask.point(lambda v: 255 if v > 0 else 0)
+
+    # Per-channel point transform: shift every pixel by exactly `delta`.
+    # Pixels already below `delta` can't go negative, so they shift up
+    # instead -- every covered pixel must carry a nonzero delta or that
+    # region becomes untraceable.
+    shifted = img.point(lambda v: v + delta if v < delta else v - delta)
+
+    return Image.composite(shifted, img, mask)
+
+
 def watermark_image(
     image_bytes: bytes,
     text: str,
     opacity: float = 0.12,
+    invisible_text: Optional[str] = None,
 ) -> bytes:
     """
     Overlay a repeating diagonal watermark text grid on an image.
     Automatically picks dark or light text based on image brightness.
-    Returns PNG bytes.
+
+    If `invisible_text` is given, an invisible forensic layer (micro-delta
+    pixel shifts, imperceptible to the eye) is embedded UNDER the visible
+    watermark first, so the visible overlay doesn't sit on top of shifted
+    pixels' original values.
+
+    Returns PNG bytes. Must stay PNG (lossless) -- JPEG quantization would
+    destroy the micro-delta shifts.
     """
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+    if invisible_text:
+        img = embed_microdelta(img, invisible_text, delta=3)
+
+    img = img.convert("RGBA")
     width, height = img.size
 
     # --- Auto-detect background brightness ---

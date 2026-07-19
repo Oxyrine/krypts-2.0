@@ -23,6 +23,7 @@ export interface UserResponse {
   created_at: string;
   last_login_time?: string;
   is_admin?: boolean;
+  has_keys?: boolean;
 }
 
 export interface FileUploadResponse {
@@ -34,6 +35,7 @@ export interface FileUploadResponse {
   upload_date: string;
   watermark_enabled: boolean;
   allow_download: boolean;
+  is_e2ee?: boolean;
 }
 
 export interface FileListResponse extends FileUploadResponse {
@@ -150,6 +152,28 @@ export interface InboxItem {
   shared_by_email: string;
   shared_at: string;
   access_token: string;
+  is_e2ee?: boolean;
+}
+
+export interface KeyBundleResponse {
+  public_key?: string;
+  encrypted_private_key?: string;
+  key_salt?: string;
+  has_keys: boolean;
+}
+
+export interface PublicKeyResponse {
+  email: string;
+  public_key: string;
+}
+
+export interface ValidateTokenResponse {
+  valid: boolean;
+  file_id?: string;
+  expires_at?: string;
+  permissions?: Record<string, boolean>;
+  is_e2ee?: boolean;
+  message?: string;
 }
 
 export interface GroupInviteResponse {
@@ -219,10 +243,15 @@ async function apiFetch<T>(
 
 export const api = {
   auth: {
-    signup: (email: string, password: string, fullName?: string) =>
+    signup: (
+      email: string,
+      password: string,
+      fullName?: string,
+      keyBundle?: { public_key: string; encrypted_private_key: string; key_salt: string }
+    ) =>
       apiFetch<TokenResponse>("/auth/signup", {
         method: "POST",
-        body: JSON.stringify({ email, password, full_name: fullName }),
+        body: JSON.stringify({ email, password, full_name: fullName, ...keyBundle }),
       }),
 
     login: (email: string, password: string) =>
@@ -235,6 +264,24 @@ export const api = {
 
     logout: () =>
       apiFetch<{ detail: string }>("/auth/logout", { method: "POST" }),
+
+    getKeys: () => apiFetch<KeyBundleResponse>("/auth/keys"),
+
+    setKeys: (
+      publicKey: string,
+      encryptedPrivateKey: string,
+      keySalt: string,
+      force = false
+    ) =>
+      apiFetch<KeyBundleResponse>("/auth/keys", {
+        method: "POST",
+        body: JSON.stringify({
+          public_key: publicKey,
+          encrypted_private_key: encryptedPrivateKey,
+          key_salt: keySalt,
+          force,
+        }),
+      }),
   },
 
   files: {
@@ -260,7 +307,7 @@ export const api = {
       }),
 
     validate: (token: string, fileId?: string) =>
-      apiFetch("/validate-token", {
+      apiFetch<ValidateTokenResponse>("/validate-token", {
         method: "POST",
         body: JSON.stringify({ token, file_id: fileId }),
       }),
@@ -340,13 +387,14 @@ export const api = {
 
   inbox: {
     list: () => apiFetch<InboxItem[]>("/inbox"),
-    share: (fileId: string, targetEmail?: string, targetGroupId?: string) =>
+    share: (fileId: string, targetEmail?: string, targetGroupId?: string, wrappedDek?: string) =>
       apiFetch("/inbox/share", {
         method: "POST",
         body: JSON.stringify({
           file_id: fileId,
           target_email: targetEmail,
           target_group_id: targetGroupId,
+          wrapped_dek: wrappedDek,
         }),
       }),
   },
@@ -357,6 +405,17 @@ export const api = {
       apiFetch(`/invites/${inviteId}/accept`, { method: "POST" }),
     reject: (inviteId: string) =>
       apiFetch(`/invites/${inviteId}/reject`, { method: "POST" }),
+  },
+
+  e2ee: {
+    getPubkey: (email: string) =>
+      apiFetch<PublicKeyResponse>(`/e2ee/pubkey?email=${encodeURIComponent(email)}`),
+
+    getFileKey: (fileId: string) =>
+      apiFetch<{ file_id: string; wrapped_dek: string; client_iv: string }>(`/e2ee/filekey/${fileId}`),
+
+    blobUrl: (fileId: string, token: string) =>
+      `${API_BASE}/e2ee/blob/${fileId}?token=${encodeURIComponent(token)}`,
   },
 };
 

@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime
 
-from sqlalchemy import String, Enum, Integer, DateTime, Uuid, func
+from sqlalchemy import String, Enum, Integer, DateTime, Uuid, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -40,6 +40,12 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+    # E2EE key material — private key is client-encrypted before it ever
+    # reaches the server; the server only stores opaque base64 blobs.
+    public_key: Mapped[str] = mapped_column(Text, nullable=True)
+    encrypted_private_key: Mapped[str] = mapped_column(Text, nullable=True)
+    key_salt: Mapped[str] = mapped_column(String(64), nullable=True)
 
     # Relationships
     activity_logs: Mapped[list["UserActivityLog"]] = relationship(

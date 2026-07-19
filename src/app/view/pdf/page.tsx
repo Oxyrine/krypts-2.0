@@ -6,8 +6,11 @@ import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Shield, AlertTriangle, Down
 import { Button } from "@/components/ui/button"
 import { API_BASE, api } from "@/lib/api"
 import { useTelemetry } from "@/lib/useTelemetry"
+import { importPrivateKey, unwrapDek, decryptFileBytes } from "@/lib/crypto"
+import { InvisibleWatermark } from "@/components/invisible-watermark"
 
 const STORAGE_KEY = "krypts_watermark_settings"
+const E2EE_PRIVATE_KEY_STORAGE = "krypts_e2ee_priv"
 
 function getWatermarkSettings() {
   try {
@@ -84,6 +87,9 @@ function PdfViewerInner() {
   const [canDownload, setCanDownload] = useState(false)
   const [isDesktop, setIsDesktop] = useState(true)
   const [isHoneypot, setIsHoneypot] = useState(false)
+  const [isE2ee, setIsE2ee] = useState(false)
+  const [decryptedUrl, setDecryptedUrl] = useState<string | null>(null)
+  const [decryptError, setDecryptError] = useState<string | null>(null)
 
   const { reportScrubbing } = useTelemetry(fileId)
 
@@ -106,6 +112,7 @@ function PdfViewerInner() {
         if (resp.valid) {
           setValidToken(true)
           setCanDownload(!!resp.permissions?.download)
+          setIsE2ee(!!resp.is_e2ee)
           if (resp.is_honeypot) {
             setIsHoneypot(true)
             api.analytics.submitTelemetry("ip_mismatch", { fileId }).catch(() => {})
@@ -116,6 +123,41 @@ function PdfViewerInner() {
       })
       .catch(() => setValidToken(false))
   }, [token, fileId])
+
+  // E2EE PDFs can't be watermarked per-page server-side (the server never
+  // sees the plaintext), so we decrypt the whole document once and hand it
+  // to the browser's native PDF viewer via a blob URL.
+  useEffect(() => {
+    if (!isE2ee || !token || !fileId) return
+    let objectUrl: string | null = null
+
+    ;(async () => {
+      try {
+        const privateKeyB64 = localStorage.getItem(E2EE_PRIVATE_KEY_STORAGE)
+        if (!privateKeyB64) throw new Error("End-to-end encryption keys aren't unlocked.")
+
+        const [fileKey, blobResp] = await Promise.all([
+          api.e2ee.getFileKey(fileId),
+          fetch(api.e2ee.blobUrl(fileId, token)),
+        ])
+        if (!blobResp.ok) throw new Error("Failed to fetch encrypted content.")
+
+        const privateKey = await importPrivateKey(privateKeyB64)
+        const dek = await unwrapDek(fileKey.wrapped_dek, privateKey)
+        const ciphertext = await blobResp.arrayBuffer()
+        const plaintext = await decryptFileBytes(ciphertext, dek, fileKey.client_iv)
+
+        objectUrl = URL.createObjectURL(new Blob([plaintext], { type: "application/pdf" }))
+        setDecryptedUrl(objectUrl)
+      } catch (err: any) {
+        setDecryptError(err.message || "Failed to decrypt file.")
+      }
+    })()
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [isE2ee, token, fileId])
 
   useEffect(() => {
     // Anti-piracy measures
@@ -169,7 +211,11 @@ function PdfViewerInner() {
     )
   }
 
-  const pageUrl = isHoneypot ? "/decoy.pdf" : `${API_BASE}/pdf/${fileId}/page/${currentPage}?token=${token}`
+  const pageUrl = isHoneypot
+    ? "/decoy.pdf"
+    : isE2ee
+      ? decryptedUrl
+      : `${API_BASE}/pdf/${fileId}/page/${currentPage}?token=${token}`
 
   if (isHoneypot) {
     return (
@@ -181,6 +227,26 @@ function PdfViewerInner() {
             This document has been redacted due to security policy restrictions.
           </p>
         </div>
+      </div>
+    )
+  }
+
+  if (decryptError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-center p-8">
+          <AlertTriangle className="h-10 w-10 text-destructive" />
+          <h2 className="text-xl font-semibold">Decryption Failed</h2>
+          <p className="text-muted-foreground text-sm">{decryptError}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (isE2ee && !decryptedUrl) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-900 text-white">
+        Decrypting end-to-end encrypted document...
       </div>
     )
   }
@@ -208,15 +274,17 @@ function PdfViewerInner() {
           </Button>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-300 hover:text-white hover:bg-zinc-700" onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); reportScrubbing(); }} disabled={currentPage <= 1}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm text-zinc-300">Page {currentPage}</span>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-300 hover:text-white hover:bg-zinc-700" onClick={() => { setCurrentPage(p => p + 1); reportScrubbing(); }}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+          {!isE2ee && (
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-300 hover:text-white hover:bg-zinc-700" onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); reportScrubbing(); }} disabled={currentPage <= 1}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-zinc-300">Page {currentPage}</span>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-300 hover:text-white hover:bg-zinc-700" onClick={() => { setCurrentPage(p => p + 1); reportScrubbing(); }}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
           {canDownload && (
             <Button
               size="sm"
@@ -235,15 +303,16 @@ function PdfViewerInner() {
       <div className="flex-1 flex items-start justify-center p-6 overflow-auto">
         <div className="relative" style={{ width: `${zoom}%`, maxWidth: 900 }}>
           {userEmail && <FloatingWatermark email={userEmail} />}
+          {userEmail && <InvisibleWatermark email={userEmail} />}
           <object
-            data={pageUrl}
+            data={pageUrl ?? undefined}
             type="application/pdf"
             className="w-full min-h-[800px] rounded shadow-xl"
             onError={() => setFailedPages(prev => new Set([...prev, currentPage]))}
           >
             {/* Fallback: render as image */}
             <img
-              src={pageUrl}
+              src={pageUrl ?? undefined}
               alt={`Page ${currentPage}`}
               className="w-full rounded shadow-xl"
               draggable={false}

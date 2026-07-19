@@ -34,6 +34,11 @@ class ProtectedFile(Base):
     stream_only: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     watermark_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # End-to-end encrypted: file bytes were encrypted client-side before
+    # upload. The server never holds a usable DEK for these — encryption_key_ref
+    # is unused (NULL) and `iv` instead holds the client's AES-GCM IV.
+    is_e2ee: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )

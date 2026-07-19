@@ -55,22 +55,27 @@ async def init_db() -> None:
     import app.models.api_key  # noqa: F401
     import app.models.groups  # noqa: F401
     import app.models.file_share  # noqa: F401
+    import app.models.file_key  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Add newly added columns to existing users table if they don't exist
+    # Add newly added columns to existing tables if they don't exist
     from sqlalchemy import text
-    for col, col_def in [
-        ("warning_count", "INTEGER DEFAULT 0"),
-        ("suspension_count", "INTEGER DEFAULT 0"),
-        ("rapid_session_count", "INTEGER DEFAULT 0"),
-        ("risk_score", "INTEGER DEFAULT 0"),
-        ("account_status", "VARCHAR DEFAULT 'active'")
+    for table, col, col_def in [
+        ("users", "warning_count", "INTEGER DEFAULT 0"),
+        ("users", "suspension_count", "INTEGER DEFAULT 0"),
+        ("users", "rapid_session_count", "INTEGER DEFAULT 0"),
+        ("users", "risk_score", "INTEGER DEFAULT 0"),
+        ("users", "account_status", "VARCHAR DEFAULT 'active'"),
+        ("users", "public_key", "TEXT"),
+        ("users", "encrypted_private_key", "TEXT"),
+        ("users", "key_salt", "VARCHAR(64)"),
+        ("protected_files", "is_e2ee", "BOOLEAN DEFAULT 0"),
     ]:
         try:
             async with engine.begin() as conn:
-                await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_def}"))
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
         except Exception as e:
             # Column likely already exists
             pass

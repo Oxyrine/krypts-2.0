@@ -18,6 +18,11 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     full_name: Optional[str] = None
+    # Optional E2EE key bundle generated client-side at signup. All three
+    # must be provided together or omitted together (enforced in the router).
+    public_key: Optional[str] = None
+    encrypted_private_key: Optional[str] = None
+    key_salt: Optional[str] = None
 
     @field_validator("password")
     @classmethod
@@ -48,6 +53,7 @@ class UserResponse(BaseModel):
     created_at: datetime
     last_login_time: Optional[datetime] = None
     is_admin: bool = False
+    has_keys: bool = False
 
     @classmethod
     def from_user(cls, user) -> "UserResponse":
@@ -60,7 +66,31 @@ class UserResponse(BaseModel):
             created_at=user.created_at,
             last_login_time=user.last_login_time,
             is_admin=(user.email == settings.admin_email),
+            has_keys=bool(user.public_key),
         )
+
+
+# ---------------------------------------------------------------------------
+# E2EE key material
+# ---------------------------------------------------------------------------
+
+class KeyBundleRequest(BaseModel):
+    public_key: str
+    encrypted_private_key: str
+    key_salt: str
+    force: bool = False
+
+
+class KeyBundleResponse(BaseModel):
+    public_key: Optional[str] = None
+    encrypted_private_key: Optional[str] = None
+    key_salt: Optional[str] = None
+    has_keys: bool = False
+
+
+class PublicKeyResponse(BaseModel):
+    email: str
+    public_key: str
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +106,7 @@ class FileUploadResponse(BaseModel):
     upload_date: datetime
     watermark_enabled: bool
     allow_download: bool
+    is_e2ee: bool = False
 
 
 class FileListResponse(FileUploadResponse):
@@ -116,6 +147,7 @@ class ValidateTokenResponse(BaseModel):
     # user_id intentionally NOT returned to prevent UUID enumeration
     expires_at: Optional[datetime] = None
     permissions: Optional[Dict[str, Any]] = None
+    is_e2ee: bool = False
     message: str = "ok"
 
 

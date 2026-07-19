@@ -11,16 +11,24 @@ import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/lib/api"
 import { API_BASE } from "@/lib/api"
+import { useAuth } from "@/lib/auth-context"
+import { importPublicKey, generateDek, encryptFileBytes, wrapDek } from "@/lib/crypto"
+
+const E2EE_PRIVATE_KEY_STORAGE = "krypts_e2ee_priv"
 
 export default function UploadPage() {
+  const { user } = useAuth()
   const [file, setFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "encrypting" | "success" | "error">("idle")
   const [fileId, setFileId] = useState<string | null>(null)
+  const [isE2ee, setIsE2ee] = useState(false)
+  const [uploadedIsE2ee, setUploadedIsE2ee] = useState(false)
 
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -39,11 +47,35 @@ export default function UploadPage() {
     setProgress(20)
 
     const formData = new FormData()
-    formData.append("file", file)
 
     try {
-      setProgress(50)
-      setUploadStatus("encrypting")
+      if (isE2ee) {
+        if (!user?.email) throw new Error("Not logged in.")
+        const privateKeyB64 = localStorage.getItem(E2EE_PRIVATE_KEY_STORAGE)
+        if (!privateKeyB64) {
+          throw new Error("End-to-end encryption keys aren't unlocked. Try logging out and back in.")
+        }
+
+        setProgress(35)
+        setUploadStatus("encrypting")
+
+        const ownPubkey = await api.e2ee.getPubkey(user.email)
+        const publicKey = await importPublicKey(ownPubkey.public_key)
+        const dek = await generateDek()
+
+        const fileBytes = await file.arrayBuffer()
+        const { ciphertext, ivB64 } = await encryptFileBytes(fileBytes, dek)
+        const wrappedDek = await wrapDek(dek, publicKey)
+
+        formData.append("file", new Blob([ciphertext]), file.name)
+        formData.append("is_e2ee", "true")
+        formData.append("wrapped_dek", wrappedDek)
+        formData.append("client_iv", ivB64)
+      } else {
+        formData.append("file", file)
+        setProgress(50)
+        setUploadStatus("encrypting")
+      }
 
       const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null
       const res = await fetch(`${API_BASE}/upload`, {
@@ -61,7 +93,10 @@ export default function UploadPage() {
       setProgress(100)
       setUploadStatus("success")
       setFileId(data.id)
-      toast.success("File encrypted and stored successfully!")
+      setUploadedIsE2ee(!!data.is_e2ee)
+      toast.success(
+        isE2ee ? "File encrypted end-to-end and stored!" : "File encrypted and stored successfully!"
+      )
     } catch (err: any) {
       setUploadStatus("error")
       toast.error(err.message || "Upload failed")
@@ -75,6 +110,7 @@ export default function UploadPage() {
     setUploadStatus("idle")
     setProgress(0)
     setFileId(null)
+    setUploadedIsE2ee(false)
   }
 
   return (
@@ -180,6 +216,11 @@ export default function UploadPage() {
                       animate={{ opacity: 1, y: 0 }}
                       className="mt-6 space-y-3"
                     >
+                      {uploadedIsE2ee && (
+                        <Badge variant="outline" className="border-primary/40 text-primary">
+                          End-to-end encrypted
+                        </Badge>
+                      )}
                       <div className="bg-muted p-4 rounded-lg flex items-center justify-between">
                         <div className="text-sm font-mono truncate mr-2">File ID: {fileId}</div>
                         <Button
@@ -244,6 +285,21 @@ export default function UploadPage() {
                     <SelectItem value="disabled">Disabled</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 mt-2 border-t">
+                <div className="space-y-0.5">
+                  <Label htmlFor="e2ee-toggle">End-to-end encrypted</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Encrypted in your browser before upload. The server never sees the plaintext or the key.
+                  </p>
+                </div>
+                <Switch
+                  id="e2ee-toggle"
+                  checked={isE2ee}
+                  onCheckedChange={setIsE2ee}
+                  disabled={uploadStatus !== "idle"}
+                />
               </div>
 
               <div className="pt-4 mt-2 border-t text-xs text-muted-foreground leading-relaxed">

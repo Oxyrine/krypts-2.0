@@ -23,6 +23,9 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { api, FileListResponse, GroupResponse } from "@/lib/api"
+import { importPublicKey, importPrivateKey, unwrapDek, wrapDek } from "@/lib/crypto"
+
+const E2EE_PRIVATE_KEY_STORAGE = "krypts_e2ee_priv"
 
 const TypeIcon = ({ type }: { type: string }) => {
   if (type === "VIDEO") return <FileVideo className="h-4 w-4 text-blue-500" />
@@ -43,7 +46,10 @@ export default function ContentPage() {
   const [shareFileId, setShareFileId] = useState<string | null>(null)
   const [shareEmail, setShareEmail] = useState("")
   const [shareGroupId, setShareGroupId] = useState("none")
+  const [isSharing, setIsSharing] = useState(false)
   const { data: myGroups = [] } = useSWR<GroupResponse[]>('groups/list', api.groups.list)
+
+  const shareFile = files.find(f => f.id === shareFileId)
 
   const handleDelete = async (fileId: string, filename: string) => {
     if (!confirm(`Delete "${filename}"? This cannot be undone.`)) return
@@ -65,11 +71,41 @@ export default function ContentPage() {
       toast.error("Please enter an email or select a group.")
       return
     }
+    if (shareFile?.is_e2ee && shareGroupId !== "none") {
+      toast.error("End-to-end encrypted files can only be shared to individual users for now.")
+      return
+    }
+
+    setIsSharing(true)
     try {
+      let wrappedDek: string | undefined
+
+      if (shareFile?.is_e2ee) {
+        if (!shareEmail) {
+          toast.error("Please enter a recipient email.")
+          return
+        }
+        const privateKeyB64 = localStorage.getItem(E2EE_PRIVATE_KEY_STORAGE)
+        if (!privateKeyB64) {
+          throw new Error("Your end-to-end encryption keys aren't unlocked. Try logging out and back in.")
+        }
+
+        // Unwrap our own copy of the DEK, then re-wrap it for the recipient —
+        // the server only ever sees ciphertext, never the DEK itself.
+        const ownKey = await api.e2ee.getFileKey(shareFileId)
+        const ownPrivateKey = await importPrivateKey(privateKeyB64)
+        const dek = await unwrapDek(ownKey.wrapped_dek, ownPrivateKey)
+
+        const recipient = await api.e2ee.getPubkey(shareEmail)
+        const recipientPublicKey = await importPublicKey(recipient.public_key)
+        wrappedDek = await wrapDek(dek, recipientPublicKey)
+      }
+
       await api.inbox.share(
         shareFileId,
         shareEmail ? shareEmail : undefined,
-        shareGroupId !== "none" ? shareGroupId : undefined
+        shareGroupId !== "none" ? shareGroupId : undefined,
+        wrappedDek
       )
       toast.success("File shared successfully!")
       setShareFileId(null)
@@ -77,6 +113,8 @@ export default function ContentPage() {
       setShareGroupId("none")
     } catch (err: any) {
       toast.error(err.message || "Failed to share file.")
+    } finally {
+      setIsSharing(false)
     }
   }
 
@@ -143,7 +181,12 @@ export default function ContentPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="text-xs">{file.file_type}</Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-xs">{file.file_type}</Badge>
+                      {file.is_e2ee && (
+                        <Badge variant="outline" className="text-xs border-primary/40 text-primary">E2EE</Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{formatSize(file.file_size)}</TableCell>
                   <TableCell>
@@ -205,6 +248,11 @@ export default function ContentPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {shareFile?.is_e2ee && (
+              <Badge variant="outline" className="border-primary/40 text-primary">
+                End-to-end encrypted — individual users only
+              </Badge>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Target User Email</label>
               <Input
@@ -213,27 +261,33 @@ export default function ContentPage() {
                 onChange={(e) => setShareEmail(e.target.value)}
               />
             </div>
-            <div className="flex items-center justify-center text-muted-foreground text-sm uppercase">Or</div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Broadcast to Group</label>
-              <Select value={shareGroupId} onValueChange={(val) => setShareGroupId(val || "none")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a group" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">-- Do not use group --</SelectItem>
-                  {myGroups.map((g) => (
-                    <SelectItem key={g.group_id} value={g.group_id}>
-                      {g.name} ({g.member_count} members)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!shareFile?.is_e2ee && (
+              <>
+                <div className="flex items-center justify-center text-muted-foreground text-sm uppercase">Or</div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Broadcast to Group</label>
+                  <Select value={shareGroupId} onValueChange={(val) => setShareGroupId(val || "none")}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a group" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">-- Do not use group --</SelectItem>
+                      {myGroups.map((g) => (
+                        <SelectItem key={g.group_id} value={g.group_id}>
+                          {g.name} ({g.member_count} members)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShareFileId(null)}>Cancel</Button>
-            <Button onClick={handleShare}>Share File</Button>
+            <Button onClick={handleShare} disabled={isSharing}>
+              {isSharing ? "Sharing..." : "Share File"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

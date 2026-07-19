@@ -103,7 +103,7 @@ function startBackendServer() {
         JWT_ALGORITHM: "HS256",
         ACCESS_TOKEN_EXPIRE_MINUTES: "60",
         RAPID_SESSION_THRESHOLD_SECONDS: "120",
-        RATE_LIMIT_REQUESTS: "60",
+        RATE_LIMIT_REQUESTS: "240",
         RATE_LIMIT_WINDOW_SECONDS: "60",
         KRYPTS_ENV: "production",
       },
@@ -388,11 +388,15 @@ if (!gotTheLock) {
             "script-src 'self' 'unsafe-inline'; " +   // unsafe-inline needed for Next.js inline scripts
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "font-src 'self' https://fonts.gstatic.com; " +
-            "connect-src 'self' http://127.0.0.1:8000 http://127.0.0.1:*; " +
-            "img-src 'self' data: blob:; " +
-            "media-src 'self' http://127.0.0.1:8000 http://127.0.0.1:* blob:; " +
+            "connect-src 'self' http://127.0.0.1:8000 http://127.0.0.1:* http://localhost:8000 http://localhost:*; " +
+            "img-src 'self' data: blob: http://127.0.0.1:8000 http://127.0.0.1:* http://localhost:8000 http://localhost:*; " +
+            "media-src 'self' http://127.0.0.1:8000 http://127.0.0.1:* http://localhost:8000 http://localhost:* blob:; " +
             "frame-src 'none'; " +
-            "object-src 'none';"
+            // PDF pages render via <object data="..."> pointed at the backend's
+            // /pdf/{id}/page/{n} route (with an <img> fallback) -- object-src
+            // 'none' would silently block that the same way img-src did for
+            // the image viewer above.
+            "object-src 'self' http://127.0.0.1:8000 http://127.0.0.1:* http://localhost:8000 http://localhost:*;"
           ],
         },
       });

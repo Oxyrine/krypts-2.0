@@ -6,8 +6,11 @@ import { Shield, AlertTriangle, Download } from "lucide-react"
 import { API_BASE, api } from "@/lib/api"
 import { useTelemetry } from "@/lib/useTelemetry"
 import { Button } from "@/components/ui/button"
+import { importPrivateKey, unwrapDek, decryptFileBytes } from "@/lib/crypto"
+import { InvisibleWatermark } from "@/components/invisible-watermark"
 
 const STORAGE_KEY = "krypts_watermark_settings"
+const E2EE_PRIVATE_KEY_STORAGE = "krypts_e2ee_priv"
 
 function getWatermarkSettings() {
   try {
@@ -82,6 +85,9 @@ function ImageViewerInner() {
   const [canDownload, setCanDownload] = useState(false)
   const [isDesktop, setIsDesktop] = useState(true)
   const [isHoneypot, setIsHoneypot] = useState(false)
+  const [isE2ee, setIsE2ee] = useState(false)
+  const [decryptedUrl, setDecryptedUrl] = useState<string | null>(null)
+  const [decryptError, setDecryptError] = useState<string | null>(null)
 
   useTelemetry(fileId)
 
@@ -100,6 +106,7 @@ function ImageViewerInner() {
       .then((resp: any) => {
         if (resp.valid) {
           setCanDownload(!!resp.permissions?.download)
+          setIsE2ee(!!resp.is_e2ee)
           if (resp.is_honeypot) {
             setIsHoneypot(true)
             api.analytics.submitTelemetry("ip_mismatch", { fileId }).catch(() => {})
@@ -108,6 +115,40 @@ function ImageViewerInner() {
       })
       .catch(() => {})
   }, [token, fileId])
+
+  // For E2EE images, fetch the raw ciphertext and decrypt it in the browser —
+  // the server never has the DEK, so it can't watermark these server-side.
+  useEffect(() => {
+    if (!isE2ee || !token || !fileId) return
+    let objectUrl: string | null = null
+
+    ;(async () => {
+      try {
+        const privateKeyB64 = localStorage.getItem(E2EE_PRIVATE_KEY_STORAGE)
+        if (!privateKeyB64) throw new Error("End-to-end encryption keys aren't unlocked.")
+
+        const [fileKey, blobResp] = await Promise.all([
+          api.e2ee.getFileKey(fileId),
+          fetch(api.e2ee.blobUrl(fileId, token)),
+        ])
+        if (!blobResp.ok) throw new Error("Failed to fetch encrypted content.")
+
+        const privateKey = await importPrivateKey(privateKeyB64)
+        const dek = await unwrapDek(fileKey.wrapped_dek, privateKey)
+        const ciphertext = await blobResp.arrayBuffer()
+        const plaintext = await decryptFileBytes(ciphertext, dek, fileKey.client_iv)
+
+        objectUrl = URL.createObjectURL(new Blob([plaintext]))
+        setDecryptedUrl(objectUrl)
+      } catch (err: any) {
+        setDecryptError(err.message || "Failed to decrypt file.")
+      }
+    })()
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [isE2ee, token, fileId])
 
   useEffect(() => {
     const handleContextMenu = (e: MouseEvent) => e.preventDefault()
@@ -149,7 +190,11 @@ function ImageViewerInner() {
     )
   }
 
-  const imageUrl = isHoneypot ? "/decoy.jpg" : `${API_BASE}/image/${fileId}?token=${token}`
+  const imageUrl = isHoneypot
+    ? "/decoy.jpg"
+    : isE2ee
+      ? decryptedUrl
+      : `${API_BASE}/image/${fileId}?token=${token}`
 
   if (isHoneypot) {
     return (
@@ -159,6 +204,26 @@ function ImageViewerInner() {
           <h2 className="text-xl font-semibold">Important Notice</h2>
           <p className="text-muted-foreground text-sm">This image has been redacted due to security policy restrictions.</p>
         </div>
+      </div>
+    )
+  }
+
+  if (decryptError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-center p-8">
+          <AlertTriangle className="h-10 w-10 text-destructive" />
+          <h2 className="text-xl font-semibold">Decryption Failed</h2>
+          <p className="text-muted-foreground text-sm">{decryptError}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (isE2ee && !decryptedUrl) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-white">
+        Decrypting end-to-end encrypted image...
       </div>
     )
   }
@@ -191,9 +256,10 @@ function ImageViewerInner() {
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="relative max-w-4xl w-full">
           {userEmail && <FloatingWatermark email={userEmail} />}
+          {userEmail && <InvisibleWatermark email={userEmail} />}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={imageUrl}
+            src={imageUrl ?? undefined}
             alt="Protected content"
             className="w-full rounded-xl shadow-2xl"
             draggable={false}
