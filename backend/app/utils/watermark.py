@@ -34,8 +34,13 @@ def embed_microdelta(img: Image.Image, text: str, delta: int = 3) -> Image.Image
     text_w = max(1, bbox[2] - bbox[0])
     text_h = max(1, bbox[3] - bbox[1])
 
-    row_step = text_h + 8
-    col_step = text_w + 40
+    # Generous gaps between repetitions -- packing rows/columns tight makes
+    # adjacent instances bleed into each other once the scanner's blur-based
+    # detection smears everything, turning legible repeated text into an
+    # undifferentiated block. A full text-height/width of blank space keeps
+    # each repetition visually distinct after that processing.
+    row_step = text_h * 3
+    col_step = text_w * 2
 
     row_i = 0
     for y in range(0, height, row_step):

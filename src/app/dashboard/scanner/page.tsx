@@ -105,16 +105,27 @@ export default function ScannerPage() {
       // Sensitivity turned DOWN to stay legible -- the opposite of what
       // "sensitivity" usually implies, but consistent with how this
       // detector actually behaves.
-      const threshold = Math.round(((100 - sensitivity[0]) / 100) * 160)
+      // `floor` is the Sensitivity-controlled cutoff below which a pixel is
+      // just background. Above it, pixels are painted along a green
+      // GRADIENT proportional to how far they clear the floor, rather than
+      // one flat solid color. A binary paint erases all internal structure
+      // in the "detected" region -- adjacent letter strokes, which naturally
+      // vary in diff strength, all become the exact same solid green and
+      // merge into an unreadable block. The gradient keeps stroke-to-stroke
+      // brightness differences visible, so letterforms stay legible instead
+      // of collapsing into a flat mass.
+      const floor = Math.round(((100 - sensitivity[0]) / 100) * 160)
+      const range = Math.max(1, 255 - floor)
       const outData = ctx.createImageData(width, height)
       let flaggedPixels = 0
 
       for (let p = 0; p < pixelCount; p++) {
         const i = p * 4
-        if (diff[p] >= threshold) {
+        if (diff[p] >= floor) {
+          const t = Math.min(1, (diff[p] - floor) / range)
           outData.data[i] = 0
-          outData.data[i + 1] = 255
-          outData.data[i + 2] = 128
+          outData.data[i + 1] = Math.round(70 + t * 185)
+          outData.data[i + 2] = Math.round((70 + t * 185) * 0.5)
           flaggedPixels++
         } else {
           const d = grayWork[p] * 0.25
