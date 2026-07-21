@@ -25,7 +25,11 @@ interface WatermarkSettings {
 const defaults: WatermarkSettings = {
   enabled: true,
   text: "Confidential - {user_id}",
-  opacity: [15],
+  // Near-invisible during normal viewing -- the Forensic Scanner recovers
+  // it via a levels/contrast boost, so it doesn't need to be visible here.
+  // Below ~3% the signal falls under the noise floor of any realistic
+  // capture and becomes unrecoverable no matter how the scanner is tuned.
+  opacity: [5],
   density: [3],
   colorScheme: "light",
 }

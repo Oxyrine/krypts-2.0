@@ -78,6 +78,7 @@ async def generate_token(
     claims = {
         "file_id": str(body.file_id),
         "user_id": str(current_user.user_id),
+        "sub": current_user.email,
         "permissions": body.permissions,
         "exp": exp,
         "jti": token_id,

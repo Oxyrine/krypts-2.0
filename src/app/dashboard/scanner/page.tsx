@@ -69,71 +69,36 @@ export default function ScannerPage() {
       bgCtx.filter = "none"
       const bgData = bgCtx.getImageData(0, 0, width, height).data
 
-      // --- Step 3: high-pass diff + grayscale, amplified by a FIXED gain ---
-      // The embedded shift is only +/-3 RGB steps, so the raw high-pass
-      // difference between the two blur levels is tiny (typically 0-2 on a
-      // clean capture). AMPLIFY brings that into a usable 0-255 range.
+      // --- Step 3: levels/contrast boost -- literally "increase the opacity" ---
+      // The watermark is a genuine low-opacity (5%) alpha-blended text
+      // overlay, not a subtle bit-shift -- so recovering it is the same
+      // operation as Photoshop's Levels/Auto-Contrast: subtract the local
+      // background estimate (the heavy blur) from the actual pixel (the
+      // lightly-denoised original) to isolate what the watermark added, then
+      // multiply that difference by GAIN and re-add it around mid-gray. This
+      // literally reconstructs "what this would look like at higher
+      // opacity" per pixel, per channel -- so it renders as natural,
+      // readable text rather than a synthetic heatmap.
       //
-      // Deliberately NOT using per-image histogram equalization here: an
-      // earlier version of this pipeline auto-stretched the diff channel's
-      // own min/max to fill 0-255 on every scan. Since almost any image has
-      // SOME nonzero high-pass variation everywhere (compression blocking,
-      // sensor noise, gradients), that stretch pushed ordinary background
-      // variation up to "detected" on every single image, regardless of
-      // whether a watermark was present -- the whole canvas came out green.
-      // A fixed gain + a Sensitivity-controlled threshold means only pixels
-      // that are actually different by a meaningful amount light up.
-      const AMPLIFY = 48
+      // GAIN is controlled by Sensitivity. Real photos/compressed images
+      // carry more ambient high-pass noise than a clean screenshot, so a
+      // noisy source will need Sensitivity turned DOWN to stay legible --
+      // more gain amplifies noise right along with the signal.
+      const GAIN = 4 + (sensitivity[0] / 100) * 36
       const pixelCount = width * height
-      const diff = new Uint8Array(pixelCount)
-      const grayWork = new Float32Array(pixelCount)
-
-      for (let p = 0; p < pixelCount; p++) {
-        const i = p * 4
-        const grayW = workData[i] * 0.299 + workData[i + 1] * 0.587 + workData[i + 2] * 0.114
-        const grayB = bgData[i] * 0.299 + bgData[i + 1] * 0.587 + bgData[i + 2] * 0.114
-        grayWork[p] = grayW
-        diff[p] = Math.min(255, Math.abs(grayW - grayB) * AMPLIFY)
-      }
-
-      // --- Step 4: threshold + green highlight ---
-      // Higher Sensitivity -> lower threshold -> more pixels qualify (more
-      // green, catches subtler signal but more prone to noise). Lower
-      // Sensitivity -> higher threshold -> only strong, obvious differences
-      // show. Real photos/compressed images carry more ambient high-pass
-      // noise than a clean screenshot, so a noisy source will need
-      // Sensitivity turned DOWN to stay legible -- the opposite of what
-      // "sensitivity" usually implies, but consistent with how this
-      // detector actually behaves.
-      // `floor` is the Sensitivity-controlled cutoff below which a pixel is
-      // just background. Above it, pixels are painted along a green
-      // GRADIENT proportional to how far they clear the floor, rather than
-      // one flat solid color. A binary paint erases all internal structure
-      // in the "detected" region -- adjacent letter strokes, which naturally
-      // vary in diff strength, all become the exact same solid green and
-      // merge into an unreadable block. The gradient keeps stroke-to-stroke
-      // brightness differences visible, so letterforms stay legible instead
-      // of collapsing into a flat mass.
-      const floor = Math.round(((100 - sensitivity[0]) / 100) * 160)
-      const range = Math.max(1, 255 - floor)
       const outData = ctx.createImageData(width, height)
       let flaggedPixels = 0
 
       for (let p = 0; p < pixelCount; p++) {
         const i = p * 4
-        if (diff[p] >= floor) {
-          const t = Math.min(1, (diff[p] - floor) / range)
-          outData.data[i] = 0
-          outData.data[i + 1] = Math.round(70 + t * 185)
-          outData.data[i + 2] = Math.round((70 + t * 185) * 0.5)
-          flaggedPixels++
-        } else {
-          const d = grayWork[p] * 0.25
-          outData.data[i] = d
-          outData.data[i + 1] = d
-          outData.data[i + 2] = d
-        }
+        const dr = workData[i] - bgData[i]
+        const dg = workData[i + 1] - bgData[i + 1]
+        const db = workData[i + 2] - bgData[i + 2]
+        outData.data[i] = Math.max(0, Math.min(255, Math.round(128 + dr * GAIN)))
+        outData.data[i + 1] = Math.max(0, Math.min(255, Math.round(128 + dg * GAIN)))
+        outData.data[i + 2] = Math.max(0, Math.min(255, Math.round(128 + db * GAIN)))
         outData.data[i + 3] = 255
+        if (Math.abs(dr) + Math.abs(dg) + Math.abs(db) > 6) flaggedPixels++
       }
 
       ctx.putImageData(outData, 0, 0)
@@ -222,7 +187,7 @@ export default function ScannerPage() {
           <CardHeader>
             <CardTitle>2. Analysis Results</CardTitle>
             <CardDescription>
-              Gaussian noise reduction and amplified high-pass background subtraction reveal hidden forensic data. Look for the repeating text pattern, not just the amount of green — clean captures reveal it clearly, while noisy photos may need Sensitivity turned down to stay legible.
+              A levels/contrast boost reconstructs what the near-invisible watermark would look like at higher opacity — like Photoshop&apos;s Levels tool. Clean screenshots reveal the repeating email pattern clearly; noisy phone photos may need Sensitivity turned down to stay legible.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex items-center justify-center p-6 bg-zinc-950 rounded-md min-h-[400px]">
@@ -237,13 +202,13 @@ export default function ScannerPage() {
                 {hasSignal ? (
                   <div className="mt-4 p-4 bg-emerald-950/30 border border-emerald-900/50 rounded-md text-emerald-200 text-sm font-mono">
                     <p className="font-bold text-emerald-500 mb-2">⚠ FORENSIC WATERMARK REVEALED</p>
-                    <p>Detected watermark coverage: {detectedPct}%</p>
-                    <p>The highlighted pixels above expose the hidden identity embedded in this content.</p>
+                    <p>Signal coverage: {detectedPct}%</p>
+                    <p>Look for the repeating diagonal text above — it carries the leaker&apos;s email.</p>
                   </div>
                 ) : (
                   <div className="mt-4 p-4 bg-zinc-900/50 border border-zinc-700 rounded-md text-zinc-400 text-sm font-mono">
                     <p className="font-bold text-zinc-300 mb-2">No watermark signal detected</p>
-                    <p>Detected watermark coverage: {detectedPct}%</p>
+                    <p>Signal coverage: {detectedPct}%</p>
                     <p>Try raising sensitivity or adjusting noise reduction, then rescan.</p>
                   </div>
                 )}

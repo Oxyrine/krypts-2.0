@@ -98,15 +98,17 @@ def watermark_image(
     thumb = img.convert("L").resize((64, 64), Image.LANCZOS)
     mean_brightness = sum(thumb.getdata()) / (64 * 64)  # 0–255
 
-    # Dark text on light backgrounds, light text on dark backgrounds
+    # Dark text on light backgrounds, light text on dark backgrounds.
+    # No opacity floor here -- the caller's opacity is respected exactly,
+    # even at very low values intended to stay imperceptible during normal
+    # viewing (the Forensic Scanner recovers it via a levels/contrast boost).
     if mean_brightness > 140:
         # Light image → use dark charcoal watermark
         r, g, b = 40, 40, 40
-        actual_opacity = max(opacity, 0.18)  # slightly more visible on white
     else:
         # Dark image → use light gray watermark
         r, g, b = 210, 210, 210
-        actual_opacity = opacity
+    actual_opacity = opacity
 
     # Create transparent overlay
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -121,9 +123,16 @@ def watermark_image(
     alpha = int(255 * actual_opacity)
     fill_color = (r, g, b, alpha)
 
-    # Widely spaced diagonal grid — only 2-3 watermarks visible at once
-    step_x = max(width // 2, 300)
-    step_y = max(height // 3, 200)
+    # Dense repeating grid, generously spaced (not overlapping) -- at
+    # opacity=0.01 this is imperceptible during normal viewing regardless of
+    # density, and good area coverage means the Forensic Scanner can recover
+    # it even from a cropped/partial screenshot, not just an uncropped one
+    # that happens to land on one of only 2-3 total instances.
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = max(1, bbox[2] - bbox[0])
+    text_h = max(1, bbox[3] - bbox[1])
+    step_x = text_w + 60
+    step_y = text_h * 4
     for y in range(0, height * 2, step_y):
         for x in range(-width // 2, width * 2, step_x):
             draw.text((x, y), text, font=font, fill=fill_color)

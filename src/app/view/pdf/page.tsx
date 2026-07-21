@@ -17,7 +17,7 @@ function getWatermarkSettings() {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) return JSON.parse(stored)
   } catch { /* ignore */ }
-  return { enabled: true, text: "Confidential - {user_id}", opacity: [15], density: [3], colorScheme: "dark" }
+  return { enabled: true, text: "Confidential - {user_id}", opacity: [5], density: [3], colorScheme: "dark" }
 }
 
 function FloatingWatermark({ email }: { email: string }) {

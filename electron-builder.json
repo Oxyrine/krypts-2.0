@@ -17,7 +17,7 @@
   ],
   "extraResources": [
     {
-      "from": "../drm-platform/backend/dist",
+      "from": "backend/dist",
       "to": ".",
       "filter": ["backend-server.exe"]
     }
@@ -40,6 +40,6 @@
   "publish": {
     "provider": "github",
     "owner": "Oxyrine",
-    "repo": "Krypts"
+    "repo": "krypts-2.0"
   }
 }
